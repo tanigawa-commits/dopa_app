@@ -99,17 +99,20 @@ def main():
                     elif str(user_records.iloc[0].get('password', '')) != hashed_del_pass:
                         st.error("パスワードが一致しません。")
                     else:
-                        # 1. スプレッドシートから削除
+                        # 1. スプレッドシート（DB）から全データを削除
                         updated_df = all_data[all_data['real_name'] != del_real_name]
                         conn.update(worksheet="Records", data=updated_df)
                         
-                        # 2. ★重要：URLパラメータを完全に空にする
+                        # 2. ★重要：URLパラメータ（氏名、ニックネーム、チーム名）をすべて物理的に削除
+                        # .clear()によりURL末尾の ?rn=...&nn=...&t=... が消滅します
                         st.query_params.clear() 
                         
-                        # 3. 完了通知と画面リセット
-                        st.success("全てのデータを削除し、ログイン情報もクリアしました。")
+                        # 3. 完了通知と画面の強制リフレッシュ
+                        st.success("全てのデータを削除し、ログイン情報（チーム名含む）をクリアしました。")
                         st.balloons()
-                        st.rerun() # これでURLが真っさらな状態で再起動されます
+                        
+                        # 再起動により、サイドバーの入力欄やパスワード欄がすべて空の状態に戻ります
+                        st.rerun()
     
     if not u_real_name or not u_pass or not u_nickname:
         st.warning("氏名・パスワード・ニックネームをすべて入力してください。")
@@ -193,6 +196,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 

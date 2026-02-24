@@ -68,7 +68,7 @@ def main():
             st.query_params["t"] = t_name
             st.success("ログイン情報を保持しました。")
 
-st.divider() 
+        st.divider() 
         with st.expander("⚠️ アカウント・全データ削除"):
             st.write("この操作は取り消せません。あなたの全記録がDBから完全に削除されます。")
             
@@ -185,6 +185,7 @@ st.divider()
 
 if __name__ == "__main__":
     main()
+
 
 
 

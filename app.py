@@ -89,6 +89,7 @@ def main():
                 elif not del_real_name or not del_pass:
                     st.error("本人確認情報を入力してください。")
                 else:
+                    # ハッシュ化して照合
                     hashed_del_pass = make_hash(del_pass)
                     user_records = all_data[all_data['real_name'] == del_real_name]
                     
@@ -97,10 +98,16 @@ def main():
                     elif str(user_records.iloc[0].get('password', '')) != hashed_del_pass:
                         st.error("パスワードが一致しません。")
                     else:
+                        # 1. DBから本人データを削除した新DFを作成
                         updated_df = all_data[all_data['real_name'] != del_real_name]
+                        # 2. スプレッドシートを更新
                         conn.update(worksheet="Records", data=updated_df)
+                        
+                        # 3. URLパラメータをクリア
                         st.query_params.clear() 
-                        st.success("削除完了。再読み込みします。")
+                        
+                        # 4. 完了を伝えてからリロード（これで画面が真っ白に戻る）
+                        st.success("全てのデータを削除しました。")
                         st.rerun()
 
     # --- 2. メイン画面の表示判定（サイドバーの外に出す） ---
@@ -193,6 +200,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 

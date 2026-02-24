@@ -78,13 +78,13 @@ def main():
         with st.expander("⚠️ アカウント・全データ削除"):
             # ...削除ロジック（ここはそのままでOK）...
 
-        # --- ★ここが修正ポイント：表示の切り替え条件を厳格にする ---
-        # URLパラメータ（保存された情報）と、現在の入力欄の両方が揃っている場合のみ表示
-        is_authenticated = (
-            saved_real_name != "" and 
-            saved_nickname != "" and 
-             u_pass != "" # パスワードが入力されていることを条件に加える
-        )
+            # --- ★ここが修正ポイント：表示の切り替え条件を厳格にする ---
+            # URLパラメータ（保存された情報）と、現在の入力欄の両方が揃っている場合のみ表示
+            is_authenticated = (
+                saved_real_name != "" and 
+                saved_nickname != "" and 
+                u_pass != "" # パスワードが入力されていることを条件に加える
+            )
 
     if not is_authenticated:
         st.warning("左側のサイドバーで情報を入力し、「ログイン情報を保持して認証」ボタンを押してください。")
@@ -169,6 +169,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 

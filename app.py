@@ -111,33 +111,23 @@ def main():
                         updated_df = all_data[all_data['real_name'] != del_real_name]
                         conn.update(worksheet="Records", data=updated_df)
                         
-                        # 2. クエリパラメータとセッションをクリア
+                        # 2. URLパラメータとセッションを完全にクリア
                         st.query_params.clear()
                         for key in list(st.session_state.keys()):
                             del st.session_state[key]
                         
-                        # 3. 画面全体を書き換えてリセットを促す
-                        # st.empty()を使ってサイドバーやメイン画面を「消滅」させます
-                        st.sidebar.empty()
-                        st.empty() 
-                        
-                        st.success("✅ 全てのデータの削除が完了しました。")
-                        
-                        # 自動リロードが効かない環境向けの、確実な「脱出用リンク」
-                        st.markdown(
-                            """
-                            <div style="text-align: center; margin-top: 50px;">
-                                <h3>クリーンアップが完了しました</h3>
-                                <p>ブラウザのキャッシュをクリアして初期画面に戻るには、下のリンクをクリックしてください。</p>
-                                <a href="./" target="_self" style="font-size: 20px; color: #ff4b4b; font-weight: bold; text-decoration: none; border: 2px solid #ff4b4b; padding: 10px 20px; border-radius: 10px;">
-                                    🚀 初期画面へ戻る（ここをクリック）
-                                </a>
-                            </div>
-                            """, 
-                            unsafe_allow_html=True
-                        )
-                        # 以降の処理（メイン画面など）を一切実行させない
-                        st.stop()
+                        # 3. 削除成功フラグをセッションに持たせる
+                        st.session_state["deleted"] = True
+                        st.rerun()
+
+    # --- ログイン判定の直前にリセット後の処理を追加 ---
+    if st.session_state.get("deleted"):
+        st.success("✅ 全てのデータを削除しました。")
+        st.info("ブラウザのURLもクリアされました。このまま新しいアカウントを登録できます。")
+        # フラグを消しておかないと、次に何か操作した時にまたこのメッセージが出るので消す
+        del st.session_state["deleted"]
+        # ここで一旦止めるのではなく、そのまま下の「未認証時の警告」へ流すことで
+        # 自動的に真っさらなログイン画面が表示されるようになります。
 
     # --- 2. メイン画面の表示判定 ---
     is_authenticated = (
@@ -218,6 +208,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 

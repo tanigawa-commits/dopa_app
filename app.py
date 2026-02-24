@@ -68,28 +68,40 @@ def main():
             st.query_params["t"] = t_name
             st.success("ログイン情報を保持しました。")
 
-            st.divider() # 区切り線
-            with st.expander("⚠️ アカウント削除"):
-                st.write("この操作は取り消せません。あなたの全データが削除されます。") 
-                del_confirm = st.checkbox("全データを削除することに同意します")
-                if st.button("アカウント削除を実行"):
-                    if not del_confirm:
-                        st.error("同意チェックを入れてください。")
-                    elif not u_real_name or not u_pass:
-                        st.error("氏名とパスワードを入力してください。")
-                    else:
-                        hashed_input_pass = make_hash(u_pass)
-                        user_records = all_data[all_data['real_name'] == u_real_name]
+st.divider() 
+        with st.expander("⚠️ アカウント・全データ削除"):
+            st.write("この操作は取り消せません。あなたの全記録がDBから完全に削除されます。")
+            
+            # 削除専用の入力欄（誤操作・なりすまし防止）
+            del_real_name = st.text_input("削除確認：登録した氏名を入力", key="del_rn")
+            del_pass = st.text_input("削除確認：パスワードを入力", type="password", key="del_pw")
+            del_confirm = st.checkbox("全てのデータを削除することに同意します", key="del_chk")
+            
+            if st.button("アカウント削除を確定する", type="secondary"):
+                if not del_confirm:
+                    st.error("同意チェックを入れてください。")
+                elif not del_real_name or not del_pass:
+                    st.error("本人確認のため、氏名とパスワードを正しく入力してください。")
+                else:
+                    # パスワードハッシュ化して照合
+                    hashed_del_pass = make_hash(del_pass)
+                    # スプレッドシート内の当該ユーザーデータを確認
+                    user_records = all_data[all_data['real_name'] == del_real_name]
                     
-                        if user_records.empty:
-                            st.warning("登録データが見つかりません。")
-                        elif str(user_records.iloc[0].get('password', '')) != hashed_input_pass:
-                            st.error("パスワードが正しくないため削除できません。")
-                        else:
-                            updated_df = all_data[all_data['real_name'] != u_real_name]
-                            conn.update(worksheet="Records", data=updated_df)
-                            st.success("全てのデータを削除しました。アプリを再読み込みしてください。")
-                            st.rerun() # 画面をリセット
+                    if user_records.empty:
+                        st.error("該当する氏名のデータが見つかりません。")
+                    elif str(user_records.iloc[0].get('password', '')) != hashed_del_pass:
+                        st.error("パスワードが一致しません。")
+                    else:
+                        # 削除実行：本人以外のデータだけを抽出して上書き
+                        updated_df = all_data[all_data['real_name'] != del_real_name]
+                        conn.update(worksheet="Records", data=updated_df)
+                        
+                        # URLパラメータもクリア（ログアウト状態にする）
+                        st.query_params.clear()
+                        st.success("全てのデータを削除しました。")
+                        st.balloons()
+                        st.rerun()
     
     if not u_real_name or not u_pass or not u_nickname:
         st.warning("氏名・パスワード・ニックネームをすべて入力してください。")
@@ -173,5 +185,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 

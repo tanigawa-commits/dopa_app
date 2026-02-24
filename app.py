@@ -202,22 +202,34 @@ def main():
         st.subheader("📈 あなたの成長記録（累積推移）")
         user_data = all_data[all_data['real_name'] == u_real_name].copy()
         if not user_data.empty:
+            # 1. 日付列を日付型に変換してソート
             user_data['date'] = pd.to_datetime(user_data['date'])
             user_data = user_data.sort_values("date")
             
-            # グラフ用の累積計算（DBのtotal_pointsを使わず、その場で計算して時系列を保証）
+            # 2. 累積計算
             user_data['累積DP'] = user_data['points'].cumsum()
             
             st.metric("現在の累計ポイント", f"{user_data['points'].sum()} DP")
             
-            # 折れ線グラフ（累積推移）を表示
-            st.line_chart(user_data.set_index("date")["累積DP"])
+            # --- グラフの修正：横軸を日付に固定 ---
+            # set_index("date") を行うことで、横軸が日付になります
+            chart_data = user_data.set_index("date")[["累積DP"]]
+            st.line_chart(chart_data)
             
-            # 詳細履歴表
+            # --- 履歴表の修正：時分秒を表示しない ---
             st.write("### 履歴")
-            st.dataframe(user_data[['date', 'points', '累積DP']].rename(columns={'date':'日付', 'points':'獲得点'}), hide_index=True)
+            display_df = user_data.copy()
+            # 日付型を "YYYY-MM-DD" 形式の文字列に変換することで時分秒を消す
+            display_df['日付'] = display_df['date'].dt.strftime('%Y-%m-%d')
+            
+            st.dataframe(
+                display_df[['日付', 'points', '累積DP']].rename(columns={'points':'獲得点'}), 
+                hide_index=True,
+                use_container_width=True
+            )
         else:
             st.info("データがまだありません。")
 
 if __name__ == "__main__":
     main()
+

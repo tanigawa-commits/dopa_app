@@ -116,25 +116,21 @@ def main():
                         for key in list(st.session_state.keys()):
                             del st.session_state[key]
                         
-                        # 3. メッセージを表示し、パラメータなしのURLへ戻るボタン（または自動リンク）を表示
-                        st.success("全てのデータを削除しました。")
+                        # 3. 完了通知を表示
+                        st.success("全てのデータを削除しました。初期画面に戻ります...")
                         
-                        # --- ここが解決策：パラメータなしの真っさらなURLへのリンクを生成 ---
-                        # アプリのURL（https://xxx.streamlit.app/）を直接指定してリダイレクトを促します
-                        st.markdown(
+                        # --- 解決策：JavaScriptによる自動リダイレクト ---
+                        # ボタンを表示せず、0.5秒後に自動でパラメータなしのURLへ飛ばします
+                        st.components.v1.html(
                             """
-                            <div style="text-align: center; padding: 20px; background-color: #f0f2f6; border-radius: 10px;">
-                                <p>クリーンアップを完了するために、以下のボタンを押してください。</p>
-                                <a href="./" target="_self" style="text-decoration: none;">
-                                    <button style="background-color: #ff4b4b; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer;">
-                                        設定を完全にリセットして戻る
-                                    </button>
-                                </a>
-                            </div>
+                            <script>
+                                setTimeout(function(){
+                                    window.top.location.href = './';
+                                }, 500);
+                            </script>
                             """,
-                            unsafe_allow_html=True
+                            height=0,
                         )
-                        # 自動で飛ばしたい場合は以下を併用（環境により動作が異なります）
                         st.stop()
 
     # --- 2. メイン画面の表示判定 ---
@@ -216,6 +212,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 

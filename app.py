@@ -60,17 +60,27 @@ def main():
         default_team_idx = TEAM_LIST.index(saved_team) if saved_team in TEAM_LIST else 0
         t_name = st.selectbox("所属チーム", TEAM_LIST, index=default_team_idx, key="login_team")
         
-        # ログインボタン
+        # --- ログインボタン ---
         login_btn = st.button("ログイン情報を保持して認証")
         
         if login_btn:
             if not u_real_name or not u_pass or not u_nickname:
                 st.error("全項目を入力してください。")
             else:
+                # ブラウザ（URL）に保存
                 st.query_params["rn"] = u_real_name
                 st.query_params["nn"] = u_nickname
                 st.query_params["t"] = t_name
-                st.success("認証に成功しました。")
+                
+                # --- ここを修正：成功メッセージを表示して少し待つ ---
+                st.success(f"🎉 認証に成功しました！ようこそ、{u_nickname} さん。")
+                st.balloons() # お祝いの風船
+                
+                # 2秒間だけメッセージを見せるために待機
+                import time
+                time.sleep(2)
+                
+                # その後、画面を切り替える
                 st.rerun()
 
         # アカウント削除：サイドバー内で常に表示
@@ -206,5 +216,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 

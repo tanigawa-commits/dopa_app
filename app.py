@@ -103,11 +103,16 @@ def main():
                         
                         # 2. URLパラメータと全セッション情報を消去
                         st.query_params.clear()
+                        # セッション内の全入力を強制クリア
                         for key in list(st.session_state.keys()):
                             del st.session_state[key]
                         
-                        # 3. 完了通知とリロード
-                        st.success("全てのデータを削除しました。")
+                        # 3. 画面に「削除完了」を表示し、少し待ってからリロード
+                        st.success("全てのデータを削除しました。自動的にリロードします...")
+                        
+                        # ★ここを追加：JavaScriptによる強制リロードを試みる（最終手段）
+                        # これによりブラウザ自体に「ページを読み直せ」と命令します
+                        st.markdown('<meta http-equiv="refresh" content="0">', unsafe_allow_html=True)
                         st.rerun()
 
     # --- 2. メイン画面の表示判定 ---
@@ -189,3 +194,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

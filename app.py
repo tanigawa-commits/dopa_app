@@ -67,16 +67,45 @@ def main():
         login_btn = st.button("ログイン情報を保持して認証")
         
         if login_btn:
-            # チーム名が未選択（リストの先頭）の場合はエラーにする
+            # 1. 未入力チェック
             if not u_real_name or not u_pass or not u_nickname or t_name == TEAM_OPTIONS[0]:
-                st.error("氏名・パスワード・ニックネームを入力し、所属チームをリストから選択してください。")
+                st.error("全項目を入力し、所属チームを選択してください。")
             else:
-                st.query_params["rn"] = u_real_name
-                st.query_params["nn"] = u_nickname
-                st.query_params["t"] = t_name
-                st.success(f"🎉 認証に成功しました！ようこそ、{u_nickname} さん。")
-                time.sleep(2)
-                st.rerun()
+                # 2. 既存ユーザーの照合
+                # 氏名が一致するデータを取得
+                user_records = all_data[all_data['real_name'] == u_real_name]
+                
+                if not user_records.empty:
+                    # DBにある最初の1件を取得して照合
+                    db_pass = str(user_records.iloc[0].get('password', ''))
+                    db_nick = str(user_records.iloc[0].get('nickname', ''))
+                    db_team = str(user_records.iloc[0].get('team', ''))
+                    
+                    # 判定開始
+                    hashed_input_pass = make_hash(u_pass)
+                    
+                    if db_pass != hashed_input_pass:
+                        st.error("❌ パスワードが正しくありません。")
+                    elif db_nick != u_nickname:
+                        st.error(f"❌ ニックネームが登録情報（{db_nick[:1]}...）と一致しません。")
+                    elif db_team != t_name:
+                        st.error(f"❌ 所属チームが登録情報と一致しません。")
+                    else:
+                        # すべて一致した場合のみログイン許可
+                        st.query_params["rn"] = u_real_name
+                        st.query_params["nn"] = u_nickname
+                        st.query_params["t"] = t_name
+                        st.success(f"🎉 認証に成功しました！ようこそ、{u_nickname} さん。")
+                        time.sleep(2)
+                        st.rerun()
+                else:
+                    # 新規登録の場合（氏名がDBに存在しない場合）
+                    st.info("🆕 新規ユーザーとして認証情報を保持します。最初のデータを保存した際に正式登録されます。")
+                    st.query_params["rn"] = u_real_name
+                    st.query_params["nn"] = u_nickname
+                    st.query_params["t"] = t_name
+                    time.sleep(2)
+                    st.rerun()
 
         # アカウント削除
         st.divider()
@@ -194,3 +223,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

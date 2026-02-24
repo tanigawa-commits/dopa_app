@@ -123,8 +123,15 @@ def main():
                 ])
                 
                 conn.update(worksheet="Records", data=updated_df)
-                st.success(f"{target_date} のデータを保存しました！")
-                st.balloons()
+                st.success(f"✅ {target_date} のデータを保存しました！")
+                st.metric(label="本日の獲得ポイント", value=f"{score} DP") # 大きく表示
+                
+                if score > 0:
+                    st.write("ナイス！前頭前野が鍛えられています。")
+                    st.balloons()
+                elif score < 0:
+                    st.write("明日は理性の脳を味方につけましょう！") 
+                    st.balloons()
 
     # --- Tab 2 & 3: ランキング・マイデータ (既存通り) ---
     with tab2:
@@ -143,3 +150,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

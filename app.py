@@ -17,7 +17,7 @@ def load_data():
     except:
         return pd.DataFrame(columns=["real_name", "password", "nickname", "team", "date", "points", "entry_date"])
 
-TEAM_LIST = ["経営層", "第一システム部", "第二システム部", "第三システム部", "第四システム部", "営業部", "総務部", "新人"]
+TEAM_LIST = ["-- 選択してください --","経営層", "第一システム部", "第二システム部", "第三システム部", "第四システム部", "営業部", "総務部", "新人"]
 
 POINT_MASTER = {
     "資産": {
@@ -45,42 +45,34 @@ def main():
     # URLから保存情報を取得
     saved_real_name = st.query_params.get("rn", "")
     saved_nickname = st.query_params.get("nn", "")
-    saved_team = st.query_params.get("t", TEAM_LIST[0])
+    saved_team = st.query_params.get("t", TEAM_OPTIONS[0]) # デフォルトは「選択してください」
     
-    all_data = load_data()
-
-    # --- 1. ログイン・ユーザー設定（サイドバー） ---
+    # --- サイドバーエリア ---
     with st.sidebar:
         st.header("🔑 ログイン / 会員登録")
-        # keyを設定することで、rerun時に確実にリセットされるようにします
         u_real_name = st.text_input("氏名（実名）", value=saved_real_name, key="login_rn")
         u_pass = st.text_input("パスワード", type="password", key="login_pw")
         u_nickname = st.text_input("ニックネーム", value=saved_nickname, key="login_nn")
         
-        default_team_idx = TEAM_LIST.index(saved_team) if saved_team in TEAM_LIST else 0
-        t_name = st.selectbox("所属チーム", TEAM_LIST, index=default_team_idx, key="login_team")
+        # チーム選択：初期値をリストの先頭（空白用）に設定
+        default_team_idx = TEAM_OPTIONS.index(saved_team) if saved_team in TEAM_OPTIONS else 0
+        t_name = st.selectbox("所属チーム", TEAM_OPTIONS, index=default_team_idx, key="login_team")
         
-        # --- ログインボタン ---
+        # ログインボタン
         login_btn = st.button("ログイン情報を保持して認証")
         
         if login_btn:
-            if not u_real_name or not u_pass or not u_nickname:
-                st.error("全項目を入力してください。")
+            # 修正ポイント：チーム名が未選択（リストの先頭）の場合はエラーにする
+            if not u_real_name or not u_pass or not u_nickname or t_name == TEAM_OPTIONS[0]:
+                st.error("氏名・パスワード・ニックネームを入力し、所属チームをリストから選択してください。")
             else:
-                # ブラウザ（URL）に保存
                 st.query_params["rn"] = u_real_name
                 st.query_params["nn"] = u_nickname
                 st.query_params["t"] = t_name
-                
-                # --- ここを修正：成功メッセージを表示して少し待つ ---
                 st.success(f"🎉 認証に成功しました！ようこそ、{u_nickname} さん。")
-                st.balloons() # お祝いの風船
                 
-                # 2秒間だけメッセージを見せるために待機
                 import time
                 time.sleep(2)
-                
-                # その後、画面を切り替える
                 st.rerun()
 
         # アカウント削除：サイドバー内で常に表示
@@ -217,6 +209,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 

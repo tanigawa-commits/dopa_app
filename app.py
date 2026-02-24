@@ -79,6 +79,8 @@ def main():
         st.divider()
         with st.expander("⚠️ アカウント・全データ削除"):
             st.write("この操作は取り消せません。")
+            
+            # 削除専用の入力欄（keyを設定しておくことで、rerun時にリセットされます）
             del_real_name = st.text_input("削除確認：登録した氏名を入力", key="del_rn")
             del_pass = st.text_input("削除確認：パスワードを入力", type="password", key="del_pw")
             del_confirm = st.checkbox("全てのデータを削除することに同意します", key="del_chk")
@@ -89,7 +91,7 @@ def main():
                 elif not del_real_name or not del_pass:
                     st.error("本人確認情報を入力してください。")
                 else:
-                    # ハッシュ化して照合
+                    # パスワードハッシュ化して照合
                     hashed_del_pass = make_hash(del_pass)
                     user_records = all_data[all_data['real_name'] == del_real_name]
                     
@@ -98,16 +100,18 @@ def main():
                     elif str(user_records.iloc[0].get('password', '')) != hashed_del_pass:
                         st.error("パスワードが一致しません。")
                     else:
-                        # 1. DBから本人データを削除した新DFを作成
+                        # 1. スプレッドシート（DB）から全データを削除
                         updated_df = all_data[all_data['real_name'] != del_real_name]
-                        # 2. スプレッドシートを更新
                         conn.update(worksheet="Records", data=updated_df)
                         
-                        # 3. URLパラメータをクリア
+                        # 2. URLパラメータをすべて削除（名前、ニックネーム、チーム名）
                         st.query_params.clear() 
                         
-                        # 4. 完了を伝えてからリロード（これで画面が真っ白に戻る）
-                        st.success("全てのデータを削除しました。")
+                        # 3. 完了通知
+                        st.success("全てのデータを削除し、入力情報をクリアしました。")
+                        
+                        # 4. ★重要：アプリを強制再起動
+                        # これにより、パスワード欄や削除画面の入力欄、チーム選択がすべて初期化（空白/初期値）されます
                         st.rerun()
 
     # --- 2. メイン画面の表示判定（サイドバーの外に出す） ---
@@ -200,6 +204,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 

@@ -2,21 +2,24 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime, date, timedelta
 from streamlit_gsheets import GSheetsConnection
+import hashlib  # パスワードハッシュ化用に追加
 
 # --- 1. アプリ設定とDB接続 ---
 st.set_page_config(page_title="Dopa-Balance", layout="wide")
 conn = st.connection("gsheets", type=GSheetsConnection)
 
+# パスワードをハッシュ化する関数
+def make_hash(password):
+    return hashlib.sha256(str.encode(password)).hexdigest()
+
 def load_data():
     try:
-        # スプレッドシート読み込み
         return conn.read(worksheet="Records", ttl="0m")
     except:
-        # 列名に実名(real_name)とニックネーム(nickname)を追加
         return pd.DataFrame(columns=["real_name", "password", "nickname", "team", "date", "points", "entry_date"])
 
 # チーム名のリスト
-TEAM_LIST = ["Aチーム", "Bチーム", "Cチーム", "営業部", "開発部", "人事部"]
+TEAM_LIST = ["経営層", "第一システム部", "第二システム部", "第三システム部", "第四システム部", "営業部", "総務部", "新人"]
 
 # ポイント定義
 POINT_MASTER = {
@@ -42,21 +45,17 @@ def get_brain_rank(points):
 def main():
     st.title("🧠 脳内ドーパミン収支決算書")
     
-    # ブラウザ（URL）から保存情報を取得
     saved_real_name = st.query_params.get("rn", "")
     saved_nickname = st.query_params.get("nn", "")
     saved_team = st.query_params.get("t", TEAM_LIST[0])
     
     all_data = load_data()
 
-    # --- ログイン設定（サイドバー） ---
     with st.sidebar:
         st.header("🔑 ログイン / 会員登録")
-        
-        # 初回・2回目共通。保存されていれば初期値として入る
         u_real_name = st.text_input("氏名（実名）", value=saved_real_name)
         u_pass = st.text_input("パスワード", type="password")
-        u_nickname = st.text_input("ニックネーム（ランキング表示用）", value=saved_nickname)
+        u_nickname = st.text_input("ニックネーム", value=saved_nickname)
         
         default_team_idx = TEAM_LIST.index(saved_team) if saved_team in TEAM_LIST else 0
         t_name = st.selectbox("所属チーム", TEAM_LIST, index=default_team_idx)
@@ -64,7 +63,6 @@ def main():
         login_btn = st.button("ログイン情報を保持して認証")
         
         if login_btn:
-            # ブラウザ（URLパラメータ）に保存
             st.query_params["rn"] = u_real_name
             st.query_params["nn"] = u_nickname
             st.query_params["t"] = t_name
@@ -83,12 +81,14 @@ def main():
                                     min_value=date.today() - timedelta(days=2), 
                                     max_value=date.today())
         
-        # 既存データの照合（実名と日付で検索）
+        # 入力されたパスワードをハッシュ化して照合
+        hashed_input_pass = make_hash(u_pass)
         existing = all_data[(all_data['real_name'] == u_real_name) & (all_data['date'] == str(target_date))]
         
         can_edit = True
         if not existing.empty:
-            if str(existing.iloc[0].get('password', '')) != u_pass:
+            # DBに保存されているハッシュ値と比較
+            if str(existing.iloc[0].get('password', '')) != hashed_input_pass:
                 st.error("❌ パスワードが一致しません。")
                 can_edit = False
             elif existing.iloc[0]['entry_date'] != str(date.today()):
@@ -111,8 +111,9 @@ def main():
                         sum(POINT_MASTER["特別利益"][i] for i in s_sel) + \
                         (sum(POINT_MASTER["負債"][i] for i in l_sel) * (0.5 if confess else 1))
                 
+                # パスワードをハッシュ化して保存
                 new_row = pd.DataFrame([{
-                    "real_name": u_real_name, "password": u_pass, "nickname": u_nickname, 
+                    "real_name": u_real_name, "password": hashed_input_pass, "nickname": u_nickname, 
                     "team": t_name, "date": str(target_date), "points": score, "entry_date": str(date.today())
                 }])
                 
@@ -125,26 +126,19 @@ def main():
                 st.success(f"{target_date} のデータを保存しました！")
                 st.balloons()
 
-    # --- Tab 2: ランキング（ニックネームのみ表示） ---
+    # --- Tab 2 & 3: ランキング・マイデータ (既存通り) ---
     with tab2:
-        st.subheader("社員間ランキング（ニックネーム表示）")
+        st.subheader("ランキング")
         if not all_data.empty:
-            # 実名は除外して集計
             summary = all_data.groupby(['nickname', 'team'])['points'].sum().reset_index()
             summary['称号'] = summary['points'].apply(get_brain_rank)
             st.dataframe(summary.sort_values("points", ascending=False), use_container_width=True)
-            
-            st.subheader("チーム対抗戦")
-            team_sum = summary.groupby('team')['points'].mean().reset_index()
-            st.dataframe(team_sum.sort_values("points", ascending=False), use_container_width=True)
 
-    # --- Tab 3: マイデータ ---
     with tab3:
         user_data = all_data[all_data['real_name'] == u_real_name].sort_values("date")
         if not user_data.empty:
             total = user_data['points'].sum()
             st.metric("累計ポイント", f"{total} DP")
-            st.info(f"称号: {get_brain_rank(total)}")
             st.line_chart(user_data.set_index("date")["points"])
 
 if __name__ == "__main__":

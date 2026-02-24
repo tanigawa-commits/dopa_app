@@ -61,13 +61,36 @@ def main():
         t_name = st.selectbox("所属チーム", TEAM_LIST, index=default_team_idx)
         
         login_btn = st.button("ログイン情報を保持して認証")
-        
+
         if login_btn:
             st.query_params["rn"] = u_real_name
             st.query_params["nn"] = u_nickname
             st.query_params["t"] = t_name
             st.success("ログイン情報を保持しました。")
 
+            st.divider() # 区切り線
+            with st.expander("⚠️ アカウント削除"):
+                st.write("この操作は取り消せません。あなたの全データが削除されます。") 
+                del_confirm = st.checkbox("全データを削除することに同意します")
+                if st.button("アカウント削除を実行"):
+                    if not del_confirm:
+                        st.error("同意チェックを入れてください。")
+                    elif not u_real_name or not u_pass:
+                        st.error("氏名とパスワードを入力してください。")
+                    else:
+                        hashed_input_pass = make_hash(u_pass)
+                        user_records = all_data[all_data['real_name'] == u_real_name]
+                    
+                        if user_records.empty:
+                            st.warning("登録データが見つかりません。")
+                        elif str(user_records.iloc[0].get('password', '')) != hashed_input_pass:
+                            st.error("パスワードが正しくないため削除できません。")
+                        else:
+                            updated_df = all_data[all_data['real_name'] != u_real_name]
+                            conn.update(worksheet="Records", data=updated_df)
+                            st.success("全てのデータを削除しました。アプリを再読み込みしてください。")
+                            st.rerun() # 画面をリセット
+    
     if not u_real_name or not u_pass or not u_nickname:
         st.warning("氏名・パスワード・ニックネームをすべて入力してください。")
         return
@@ -150,4 +173,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 

@@ -2,13 +2,12 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime, date, timedelta
 from streamlit_gsheets import GSheetsConnection
-import hashlib  # パスワードハッシュ化用に追加
+import hashlib
 
 # --- 1. アプリ設定とDB接続 ---
 st.set_page_config(page_title="Dopa-Balance", layout="wide")
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-# パスワードをハッシュ化する関数
 def make_hash(password):
     return hashlib.sha256(str.encode(password)).hexdigest()
 
@@ -18,10 +17,8 @@ def load_data():
     except:
         return pd.DataFrame(columns=["real_name", "password", "nickname", "team", "date", "points", "entry_date"])
 
-# チーム名のリスト
 TEAM_LIST = ["経営層", "第一システム部", "第二システム部", "第三システム部", "第四システム部", "営業部", "総務部", "新人"]
 
-# ポイント定義
 POINT_MASTER = {
     "資産": {
         "ウォーキング(1k歩毎)": 10, "階段利用": 30, "朝活": 50, "筋トレ": 40,
@@ -45,42 +42,37 @@ def get_brain_rank(points):
 def main():
     st.title("🧠 脳内ドーパミン収支決算書")
     
+    # URLから保存情報を取得
     saved_real_name = st.query_params.get("rn", "")
     saved_nickname = st.query_params.get("nn", "")
     saved_team = st.query_params.get("t", TEAM_LIST[0])
     
     all_data = load_data()
 
-# --- 1. ログイン・ユーザー設定（サイドバー） ---
+    # --- サイドバーエリア ---
     with st.sidebar:
         st.header("🔑 ログイン / 会員登録")
-        u_real_name = st.text_input("氏名（実名）", value=saved_real_name)
-        u_pass = st.text_input("パスワード", type="password") # セキュリティ上、保存はさせません
-        u_nickname = st.text_input("ニックネーム", value=saved_nickname)
+        # keyを設定することで、再起動(rerun)時に確実にリセットされるようにします
+        u_real_name = st.text_input("氏名（実名）", value=saved_real_name, key="login_rn")
+        u_pass = st.text_input("パスワード", type="password", key="login_pw")
+        u_nickname = st.text_input("ニックネーム", value=saved_nickname, key="login_nn")
         
         default_team_idx = TEAM_LIST.index(saved_team) if saved_team in TEAM_LIST else 0
-        t_name = st.selectbox("所属チーム", TEAM_LIST, index=default_team_idx)
+        t_name = st.selectbox("所属チーム", TEAM_LIST, index=default_team_idx, key="login_team")
         
-        # ログインボタン
-        login_btn = st.button("ログイン情報を保持して認証")
-        
-        if login_btn:
+        if st.button("ログイン情報を保持して認証"):
             if not u_real_name or not u_pass or not u_nickname:
                 st.error("全項目を入力してください。")
             else:
-                # ブラウザ（URL）に保存
                 st.query_params["rn"] = u_real_name
                 st.query_params["nn"] = u_nickname
                 st.query_params["t"] = t_name
                 st.success("認証に成功しました。")
                 st.rerun()
 
-        # アカウント削除：サイドバー内で常に表示
         st.divider()
         with st.expander("⚠️ アカウント・全データ削除"):
             st.write("この操作は取り消せません。")
-            
-            # 削除専用の入力欄（keyを設定しておくことで、rerun時にリセットされます）
             del_real_name = st.text_input("削除確認：登録した氏名を入力", key="del_rn")
             del_pass = st.text_input("削除確認：パスワードを入力", type="password", key="del_pw")
             del_confirm = st.checkbox("全てのデータを削除することに同意します", key="del_chk")
@@ -91,7 +83,6 @@ def main():
                 elif not del_real_name or not del_pass:
                     st.error("本人確認情報を入力してください。")
                 else:
-                    # パスワードハッシュ化して照合
                     hashed_del_pass = make_hash(del_pass)
                     user_records = all_data[all_data['real_name'] == del_real_name]
                     
@@ -100,22 +91,19 @@ def main():
                     elif str(user_records.iloc[0].get('password', '')) != hashed_del_pass:
                         st.error("パスワードが一致しません。")
                     else:
-                        # 1. スプレッドシート（DB）から全データを削除
+                        # DBから削除
                         updated_df = all_data[all_data['real_name'] != del_real_name]
                         conn.update(worksheet="Records", data=updated_df)
                         
-                        # 2. URLパラメータをすべて削除（名前、ニックネーム、チーム名）
-                        st.query_params.clear() 
+                        # URLパラメータとセッション状態をすべて消去
+                        st.query_params.clear()
+                        for key in st.session_state.keys():
+                            del st.session_state[key]
                         
-                        # 3. 完了通知
-                        st.success("全てのデータを削除し、入力情報をクリアしました。")
-                        
-                        # 4. ★重要：アプリを強制再起動
-                        # これにより、パスワード欄や削除画面の入力欄、チーム選択がすべて初期化（空白/初期値）されます
+                        st.success("削除完了。リセットします。")
                         st.rerun()
 
-    # --- 2. メイン画面の表示判定（サイドバーの外に出す） ---
-    # パスワードが入力されている かつ URLに名前が保持されているときだけメインを表示
+    # --- 表示判定 ---
     is_authenticated = (
         saved_real_name != "" and 
         saved_nickname != "" and 
@@ -126,22 +114,20 @@ def main():
         st.warning("左側のサイドバーで情報を入力し、「ログイン情報を保持して認証」ボタンを押してください。")
         return
 
+    # --- メインコンテンツ ---
     tab1, tab2, tab3 = st.tabs(["📊 今日の収支", "🏆 ランキング", "📈 マイデータ"])
 
-    # --- Tab 1: 入力 ---
     with tab1:
         st.subheader(f"こんにちは、{u_nickname} さん")
         target_date = st.date_input("対象日", 
                                     min_value=date.today() - timedelta(days=2), 
                                     max_value=date.today())
         
-        # 入力されたパスワードをハッシュ化して照合
         hashed_input_pass = make_hash(u_pass)
         existing = all_data[(all_data['real_name'] == u_real_name) & (all_data['date'] == str(target_date))]
         
         can_edit = True
         if not existing.empty:
-            # DBに保存されているハッシュ値と比較
             if str(existing.iloc[0].get('password', '')) != hashed_input_pass:
                 st.error("❌ パスワードが一致しません。")
                 can_edit = False
@@ -165,7 +151,6 @@ def main():
                         sum(POINT_MASTER["特別利益"][i] for i in s_sel) + \
                         (sum(POINT_MASTER["負債"][i] for i in l_sel) * (0.5 if confess else 1))
                 
-                # パスワードをハッシュ化して保存
                 new_row = pd.DataFrame([{
                     "real_name": u_real_name, "password": hashed_input_pass, "nickname": u_nickname, 
                     "team": t_name, "date": str(target_date), "points": score, "entry_date": str(date.today())
@@ -178,16 +163,9 @@ def main():
                 
                 conn.update(worksheet="Records", data=updated_df)
                 st.success(f"✅ {target_date} のデータを保存しました！")
-                st.metric(label="本日の獲得ポイント", value=f"{score} DP") # 大きく表示
-                
-                if score > 0:
-                    st.write("ナイス！前頭前野が鍛えられています。")
-                    st.balloons()
-                elif score < 0:
-                    st.write("明日は理性の脳を味方につけましょう！") 
-                    st.balloons()
+                st.metric(label="本日の獲得ポイント", value=f"{score} DP")
+                st.balloons()
 
-    # --- Tab 2 & 3: ランキング・マイデータ (既存通り) ---
     with tab2:
         st.subheader("ランキング")
         if not all_data.empty:
@@ -204,16 +182,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-
-
-
-
-
-
-
-
-
-
-

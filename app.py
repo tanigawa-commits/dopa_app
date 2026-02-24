@@ -80,7 +80,6 @@ def main():
         with st.expander("⚠️ アカウント・全データ削除"):
             st.write("この操作は取り消せません。あなたの全記録がDBから完全に削除されます。")
             
-            # 削除専用の入力欄（誤操作・なりすまし防止）
             del_real_name = st.text_input("削除確認：登録した氏名を入力", key="del_rn")
             del_pass = st.text_input("削除確認：パスワードを入力", type="password", key="del_pw")
             del_confirm = st.checkbox("全てのデータを削除することに同意します", key="del_chk")
@@ -93,7 +92,6 @@ def main():
                 else:
                     # パスワードハッシュ化して照合
                     hashed_del_pass = make_hash(del_pass)
-                    # スプレッドシート内の当該ユーザーデータを確認
                     user_records = all_data[all_data['real_name'] == del_real_name]
                     
                     if user_records.empty:
@@ -101,15 +99,17 @@ def main():
                     elif str(user_records.iloc[0].get('password', '')) != hashed_del_pass:
                         st.error("パスワードが一致しません。")
                     else:
-                        # 削除実行：本人以外のデータだけを抽出して上書き
+                        # 1. スプレッドシートから削除
                         updated_df = all_data[all_data['real_name'] != del_real_name]
                         conn.update(worksheet="Records", data=updated_df)
                         
-                        # URLパラメータもクリア（ログアウト状態にする）
-                        st.query_params.clear()
-                        st.success("全てのデータを削除しました。")
+                        # 2. ★重要：URLパラメータを完全に空にする
+                        st.query_params.clear() 
+                        
+                        # 3. 完了通知と画面リセット
+                        st.success("全てのデータを削除し、ログイン情報もクリアしました。")
                         st.balloons()
-                        st.rerun()
+                        st.rerun() # これでURLが真っさらな状態で再起動されます
     
     if not u_real_name or not u_pass or not u_nickname:
         st.warning("氏名・パスワード・ニックネームをすべて入力してください。")
@@ -193,6 +193,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 

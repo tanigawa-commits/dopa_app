@@ -61,12 +61,20 @@ def main():
         t_name = st.selectbox("所属チーム", TEAM_LIST, index=default_team_idx)
         
         login_btn = st.button("ログイン情報を保持して認証")
-
+        
         if login_btn:
-            st.query_params["rn"] = u_real_name
-            st.query_params["nn"] = u_nickname
-            st.query_params["t"] = t_name
-            st.success("ログイン情報を保持しました。")
+            # 入力チェック
+            if not u_real_name or not u_pass or not u_nickname:
+                st.error("氏名・パスワード・ニックネームをすべて入力してください。")
+            else:
+                # ブラウザ（URLパラメータ）に保存
+                st.query_params["rn"] = u_real_name
+                st.query_params["nn"] = u_nickname
+                st.query_params["t"] = t_name
+                
+                # ★ここが重要：メッセージを出して即座に画面を更新
+                st.success("ログイン情報を保持しました。")
+                st.rerun()  # 画面を再読み込みしてメインコンテンツを表示させる
 
         st.divider() 
         with st.expander("⚠️ アカウント・全データ削除"):
@@ -185,6 +193,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 

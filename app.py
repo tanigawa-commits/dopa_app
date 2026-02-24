@@ -49,10 +49,10 @@ def main():
     
     all_data = load_data()
 
-    # --- サイドバーエリア ---
+    # --- 1. ログイン・ユーザー設定（サイドバー） ---
     with st.sidebar:
         st.header("🔑 ログイン / 会員登録")
-        # keyを設定することで、再起動(rerun)時に確実にリセットされるようにします
+        # keyを設定することで、rerun時に確実にリセットされるようにします
         u_real_name = st.text_input("氏名（実名）", value=saved_real_name, key="login_rn")
         u_pass = st.text_input("パスワード", type="password", key="login_pw")
         u_nickname = st.text_input("ニックネーム", value=saved_nickname, key="login_nn")
@@ -60,7 +60,10 @@ def main():
         default_team_idx = TEAM_LIST.index(saved_team) if saved_team in TEAM_LIST else 0
         t_name = st.selectbox("所属チーム", TEAM_LIST, index=default_team_idx, key="login_team")
         
-        if st.button("ログイン情報を保持して認証"):
+        # ログインボタン
+        login_btn = st.button("ログイン情報を保持して認証")
+        
+        if login_btn:
             if not u_real_name or not u_pass or not u_nickname:
                 st.error("全項目を入力してください。")
             else:
@@ -70,9 +73,12 @@ def main():
                 st.success("認証に成功しました。")
                 st.rerun()
 
+        # アカウント削除：サイドバー内で常に表示
         st.divider()
         with st.expander("⚠️ アカウント・全データ削除"):
             st.write("この操作は取り消せません。")
+            
+            # 削除専用の入力欄
             del_real_name = st.text_input("削除確認：登録した氏名を入力", key="del_rn")
             del_pass = st.text_input("削除確認：パスワードを入力", type="password", key="del_pw")
             del_confirm = st.checkbox("全てのデータを削除することに同意します", key="del_chk")
@@ -91,19 +97,20 @@ def main():
                     elif str(user_records.iloc[0].get('password', '')) != hashed_del_pass:
                         st.error("パスワードが一致しません。")
                     else:
-                        # DBから削除
+                        # 1. DBから削除
                         updated_df = all_data[all_data['real_name'] != del_real_name]
                         conn.update(worksheet="Records", data=updated_df)
                         
-                        # URLパラメータとセッション状態をすべて消去
+                        # 2. URLパラメータと全セッション情報を消去
                         st.query_params.clear()
-                        for key in st.session_state.keys():
+                        for key in list(st.session_state.keys()):
                             del st.session_state[key]
                         
-                        st.success("削除完了。リセットします。")
+                        # 3. 完了通知とリロード
+                        st.success("全てのデータを削除しました。")
                         st.rerun()
 
-    # --- 表示判定 ---
+    # --- 2. メイン画面の表示判定 ---
     is_authenticated = (
         saved_real_name != "" and 
         saved_nickname != "" and 
@@ -114,7 +121,7 @@ def main():
         st.warning("左側のサイドバーで情報を入力し、「ログイン情報を保持して認証」ボタンを押してください。")
         return
 
-    # --- メインコンテンツ ---
+    # --- 3. メインコンテンツ ---
     tab1, tab2, tab3 = st.tabs(["📊 今日の収支", "🏆 ランキング", "📈 マイデータ"])
 
     with tab1:

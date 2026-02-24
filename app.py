@@ -3,6 +3,7 @@ import pandas as pd
 from datetime import datetime, date, timedelta
 from streamlit_gsheets import GSheetsConnection
 import hashlib
+import time
 
 # --- 1. アプリ設定とDB接続 ---
 st.set_page_config(page_title="Dopa-Balance", layout="wide")
@@ -17,7 +18,9 @@ def load_data():
     except:
         return pd.DataFrame(columns=["real_name", "password", "nickname", "team", "date", "points", "entry_date"])
 
-TEAM_LIST = ["-- 選択してください --","経営層", "第一システム部", "第二システム部", "第三システム部", "第四システム部", "営業部", "総務部", "新人"]
+# --- 2. 各種リスト・マスタ定義 (関数の外、かつmainより上に配置) ---
+# 先頭に空白（未選択）の選択肢を追加
+TEAM_OPTIONS = ["-- 選択してください --", "経営層", "第一システム部", "第二システム部", "第三システム部", "第四システム部", "営業部", "総務部", "新人"]
 
 POINT_MASTER = {
     "資産": {
@@ -45,9 +48,11 @@ def main():
     # URLから保存情報を取得
     saved_real_name = st.query_params.get("rn", "")
     saved_nickname = st.query_params.get("nn", "")
-    saved_team = st.query_params.get("t", TEAM_OPTIONS[0]) # デフォルトは「選択してください」
+    saved_team = st.query_params.get("t", TEAM_OPTIONS[0])
     
-    # --- サイドバーエリア ---
+    all_data = load_data()
+
+    # --- 1. ログイン・ユーザー設定（サイドバー） ---
     with st.sidebar:
         st.header("🔑 ログイン / 会員登録")
         u_real_name = st.text_input("氏名（実名）", value=saved_real_name, key="login_rn")
@@ -62,7 +67,7 @@ def main():
         login_btn = st.button("ログイン情報を保持して認証")
         
         if login_btn:
-            # 修正ポイント：チーム名が未選択（リストの先頭）の場合はエラーにする
+            # チーム名が未選択（リストの先頭）の場合はエラーにする
             if not u_real_name or not u_pass or not u_nickname or t_name == TEAM_OPTIONS[0]:
                 st.error("氏名・パスワード・ニックネームを入力し、所属チームをリストから選択してください。")
             else:
@@ -70,16 +75,13 @@ def main():
                 st.query_params["nn"] = u_nickname
                 st.query_params["t"] = t_name
                 st.success(f"🎉 認証に成功しました！ようこそ、{u_nickname} さん。")
-                
-                import time
                 time.sleep(2)
                 st.rerun()
 
-        # アカウント削除：サイドバー内で常に表示
+        # アカウント削除
         st.divider()
         with st.expander("⚠️ アカウント・全データ削除"):
             st.write("この操作は取り消せません。")
-            
             del_real_name = st.text_input("削除確認：登録した氏名を入力", key="del_rn")
             del_pass = st.text_input("削除確認：パスワードを入力", type="password", key="del_pw")
             del_confirm = st.checkbox("全てのデータを削除することに同意します", key="del_chk")
@@ -90,13 +92,9 @@ def main():
                 elif not del_real_name or not del_pass:
                     st.error("本人確認情報を入力してください。")
                 else:
-                    # ハッシュ化して照合準備
                     hashed_del_pass = make_hash(del_pass)
                     user_records = all_data[all_data['real_name'] == del_real_name]
                     
-                    # --- 修正ポイント：データがなくてもクリーンアップを実行する ---
-                    
-                    # 1. パスワードチェック（データがある場合のみ実行）
                     password_correct = True
                     if not user_records.empty:
                         if str(user_records.iloc[0].get('password', '')) != hashed_del_pass:
@@ -105,30 +103,17 @@ def main():
                     if not password_correct:
                         st.error("パスワードが一致しません。")
                     else:
-                        # 2. DBから削除（データがある場合のみ）
                         if not user_records.empty:
                             updated_df = all_data[all_data['real_name'] != del_real_name]
                             conn.update(worksheet="Records", data=updated_df)
                         
-                        # 3. ブラウザ保持情報（URL）とセッションを完全にクリア
                         st.query_params.clear()
                         for key in list(st.session_state.keys()):
                             del st.session_state[key]
                         
-                        # 4. 強制リロード（meta refresh方式）
-                        # これにより、未登録の状態でも入力欄がすべて空になり、初期画面に戻ります
                         st.success("クリーンアップを完了しました。初期画面に戻ります...")
                         st.markdown('<meta http-equiv="refresh" content="0.1; url=./">', unsafe_allow_html=True)
                         st.stop()
-    
-    # --- ログイン判定の直前にリセット後の処理を追加 ---
-    if st.session_state.get("deleted"):
-        st.success("✅ 全てのデータを削除しました。")
-        st.info("ブラウザのURLもクリアされました。このまま新しいアカウントを登録できます。")
-        # フラグを消しておかないと、次に何か操作した時にまたこのメッセージが出るので消す
-        del st.session_state["deleted"]
-        # ここで一旦止めるのではなく、そのまま下の「未認証時の警告」へ流すことで
-        # 自動的に真っさらなログイン画面が表示されるようになります。
 
     # --- 2. メイン画面の表示判定 ---
     is_authenticated = (
@@ -209,12 +194,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-
-
-
-
-
-
-

@@ -211,15 +211,18 @@ def main():
             
             st.metric("現在の累計ポイント", f"{user_data['points'].sum()} DP")
             
-            # --- グラフの修正：横軸を日付に固定 ---
-            # set_index("date") を行うことで、横軸が日付になります
-            chart_data = user_data.set_index("date")[["累積DP"]]
+            # --- グラフの修正：横軸を日付文字列にして時間を排除 ---
+            # .dt.strftime('%Y-%m-%d') で文字列に変換してからインデックスに設定します
+            chart_data = user_data.copy()
+            chart_data['日付ラベル'] = chart_data['date'].dt.strftime('%m/%d') # '10/24'のような形式
+            chart_data = chart_data.set_index("日付ラベル")[["累積DP"]]
+            
+            # 折れ線グラフを表示
             st.line_chart(chart_data)
             
-            # --- 履歴表の修正：時分秒を表示しない ---
+            # --- 履歴表（前回修正済み） ---
             st.write("### 履歴")
             display_df = user_data.copy()
-            # 日付型を "YYYY-MM-DD" 形式の文字列に変換することで時分秒を消す
             display_df['日付'] = display_df['date'].dt.strftime('%Y-%m-%d')
             
             st.dataframe(
@@ -232,4 +235,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 

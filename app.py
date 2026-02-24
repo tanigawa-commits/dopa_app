@@ -191,7 +191,6 @@ def main():
                 score = sum(POINT_MASTER["資産"][i] for i in a_sel) + \
                         sum(POINT_MASTER["特別利益"][i] for i in s_sel) + \
                         (sum(POINT_MASTER["負債"][i] for i in l_sel) * (0.5 if confess else 1))
-                
                 new_row = pd.DataFrame([{
                     "real_name": u_real_name, "password": hashed_input_pass, "nickname": u_nickname, 
                     "team": t_name, "date": str(target_date), "points": score, "entry_date": str(date.today())
@@ -202,10 +201,16 @@ def main():
                     new_row
                 ])
                 
+                # 1. スプレッドシートを更新
                 conn.update(worksheet="Records", data=updated_df)
+                
+                # 2. ★重要：メッセージを表示した直後に画面をリロードする
                 st.success(f"✅ {target_date} のデータを保存しました！")
-                st.metric(label="本日の獲得ポイント", value=f"{score} DP")
                 st.balloons()
+                
+                # 画面を再起動することで、load_data()が走り、最新のランキングが表示されます
+                time.sleep(1) # バルーンを見せるための短い待機
+                st.rerun()
 
     with tab2:
         st.subheader("ランキング")
@@ -223,4 +228,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 

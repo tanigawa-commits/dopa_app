@@ -101,19 +101,31 @@ def main():
                         updated_df = all_data[all_data['real_name'] != del_real_name]
                         conn.update(worksheet="Records", data=updated_df)
                         
-                        # 2. URLパラメータと全セッション情報を消去
+                        # 2. セッション情報をクリア
                         st.query_params.clear()
-                        # セッション内の全入力を強制クリア
                         for key in list(st.session_state.keys()):
                             del st.session_state[key]
                         
-                        # 3. 画面に「削除完了」を表示し、少し待ってからリロード
-                        st.success("全てのデータを削除しました。自動的にリロードします...")
+                        # 3. メッセージを表示し、パラメータなしのURLへ戻るボタン（または自動リンク）を表示
+                        st.success("全てのデータを削除しました。")
                         
-                        # ★ここを追加：JavaScriptによる強制リロードを試みる（最終手段）
-                        # これによりブラウザ自体に「ページを読み直せ」と命令します
-                        st.markdown('<meta http-equiv="refresh" content="0">', unsafe_allow_html=True)
-                        st.rerun()
+                        # --- ここが解決策：パラメータなしの真っさらなURLへのリンクを生成 ---
+                        # アプリのURL（https://xxx.streamlit.app/）を直接指定してリダイレクトを促します
+                        st.markdown(
+                            """
+                            <div style="text-align: center; padding: 20px; background-color: #f0f2f6; border-radius: 10px;">
+                                <p>クリーンアップを完了するために、以下のボタンを押してください。</p>
+                                <a href="./" target="_self" style="text-decoration: none;">
+                                    <button style="background-color: #ff4b4b; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer;">
+                                        設定を完全にリセットして戻る
+                                    </button>
+                                </a>
+                            </div>
+                            """,
+                            unsafe_allow_html=True
+                        )
+                        # 自動で飛ばしたい場合は以下を併用（環境により動作が異なります）
+                        st.stop()
 
     # --- 2. メイン画面の表示判定 ---
     is_authenticated = (
@@ -194,4 +206,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 

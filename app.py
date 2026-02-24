@@ -51,10 +51,11 @@ def main():
     
     all_data = load_data()
 
+# --- 1. ログイン・ユーザー設定（サイドバー） ---
     with st.sidebar:
         st.header("🔑 ログイン / 会員登録")
         u_real_name = st.text_input("氏名（実名）", value=saved_real_name)
-        u_pass = st.text_input("パスワード", type="password")
+        u_pass = st.text_input("パスワード", type="password") # セキュリティ上、保存はさせません
         u_nickname = st.text_input("ニックネーム", value=saved_nickname)
         
         default_team_idx = TEAM_LIST.index(saved_team) if saved_team in TEAM_LIST else 0
@@ -67,28 +68,51 @@ def main():
             if not u_real_name or not u_pass or not u_nickname:
                 st.error("全項目を入力してください。")
             else:
+                # ブラウザ（URL）に保存
                 st.query_params["rn"] = u_real_name
                 st.query_params["nn"] = u_nickname
                 st.query_params["t"] = t_name
                 st.success("認証に成功しました。")
                 st.rerun()
 
-        # アカウント削除（略：常に表示）
+        # アカウント削除：サイドバー内で常に表示
         st.divider()
         with st.expander("⚠️ アカウント・全データ削除"):
-            # ...削除ロジック（ここはそのままでOK）...
+            st.write("この操作は取り消せません。")
+            del_real_name = st.text_input("削除確認：登録した氏名を入力", key="del_rn")
+            del_pass = st.text_input("削除確認：パスワードを入力", type="password", key="del_pw")
+            del_confirm = st.checkbox("全てのデータを削除することに同意します", key="del_chk")
+            
+            if st.button("アカウント削除を確定する"):
+                if not del_confirm:
+                    st.error("同意チェックを入れてください。")
+                elif not del_real_name or not del_pass:
+                    st.error("本人確認情報を入力してください。")
+                else:
+                    hashed_del_pass = make_hash(del_pass)
+                    user_records = all_data[all_data['real_name'] == del_real_name]
+                    
+                    if user_records.empty:
+                        st.error("該当データが見つかりません。")
+                    elif str(user_records.iloc[0].get('password', '')) != hashed_del_pass:
+                        st.error("パスワードが一致しません。")
+                    else:
+                        updated_df = all_data[all_data['real_name'] != del_real_name]
+                        conn.update(worksheet="Records", data=updated_df)
+                        st.query_params.clear() 
+                        st.success("削除完了。再読み込みします。")
+                        st.rerun()
 
-            # --- ★ここが修正ポイント：表示の切り替え条件を厳格にする ---
-            # URLパラメータ（保存された情報）と、現在の入力欄の両方が揃っている場合のみ表示
-            is_authenticated = (
-                saved_real_name != "" and 
-                saved_nickname != "" and 
-                u_pass != "" # パスワードが入力されていることを条件に加える
-            )
+    # --- 2. メイン画面の表示判定（サイドバーの外に出す） ---
+    # パスワードが入力されている かつ URLに名前が保持されているときだけメインを表示
+    is_authenticated = (
+        saved_real_name != "" and 
+        saved_nickname != "" and 
+        u_pass != "" 
+    )
 
     if not is_authenticated:
         st.warning("左側のサイドバーで情報を入力し、「ログイン情報を保持して認証」ボタンを押してください。")
-        st.info("※削除後の再登録時も、ボタンを押すまでメイン画面は表示されません。")
         return
 
     tab1, tab2, tab3 = st.tabs(["📊 今日の収支", "🏆 ランキング", "📈 マイデータ"])
@@ -169,6 +193,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 

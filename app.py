@@ -107,19 +107,28 @@ def main():
                     elif str(user_records.iloc[0].get('password', '')) != hashed_del_pass:
                         st.error("パスワードが一致しません。")
                     else:
-                        # 1. DBから削除
+                        # 1. DBから本人データを削除
                         updated_df = all_data[all_data['real_name'] != del_real_name]
                         conn.update(worksheet="Records", data=updated_df)
                         
-                        # 2. URLパラメータとセッションを完全にクリア
+                        # 2. 内部情報を空にする
                         st.query_params.clear()
                         for key in list(st.session_state.keys()):
                             del st.session_state[key]
                         
-                        # 3. 削除成功フラグをセッションに持たせる
-                        st.session_state["deleted"] = True
-                        st.rerun()
-
+                        # 3. ★最終手段：HTMLメタタグによる「強制ページ遷移」
+                        # 画面にメッセージを出しつつ、0.1秒後にパラメータなしのトップへ強制移動させます。
+                        # これにより「手動リロード」と全く同じ状態を強制的に作り出します。
+                        st.success("全てのデータを削除しました。初期化しています...")
+                        
+                        st.markdown(
+                            f'<meta http-equiv="refresh" content="0.1; url=./">', 
+                            unsafe_allow_html=True
+                        )
+                        
+                        # 以降の描画を停止してジャンプを待つ
+                        st.stop()
+    
     # --- ログイン判定の直前にリセット後の処理を追加 ---
     if st.session_state.get("deleted"):
         st.success("✅ 全てのデータを削除しました。")
@@ -208,6 +217,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 

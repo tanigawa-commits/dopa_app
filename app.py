@@ -90,4 +90,131 @@ def main():
                         st.rerun()
                 else:
                     # 新規ユーザー
-                    st
+                    st.query_params.update(rn=u_real_name, nn=u_nickname, t=t_name)
+                    st.info("🆕 新規ユーザーとして認証しました。")
+                    time.sleep(1.5)
+                    st.rerun()
+
+        # アカウント削除
+        st.divider()
+        with st.expander("⚠️ アカウント・全データ削除"):
+            st.write("この操作は取り消せません。")
+            del_real_name = st.text_input("削除確認：実名入力", key="del_rn")
+            del_pass = st.text_input("削除確認：パスワード", type="password", key="del_pw")
+            del_confirm = st.checkbox("データの削除に同意する", key="del_chk")
+            
+            if st.button("アカウント削除を確定する"):
+                if not del_confirm:
+                    st.error("同意チェックを入れてください。")
+                elif not del_real_name or not del_pass:
+                    st.error("本人確認情報を入力してください。")
+                else:
+                    hashed_del_pass = make_hash(del_pass)
+                    user_records = all_data[all_data['real_name'] == del_real_name]
+                    
+                    password_correct = True
+                    if not user_records.empty:
+                        if str(user_records.iloc[0].get('password', '')) != hashed_del_pass:
+                            password_correct = False
+                    
+                    if not password_correct:
+                        st.error("パスワードが一致しません。")
+                    else:
+                        if not user_records.empty:
+                            updated_df = all_data[all_data['real_name'] != del_real_name]
+                            conn.update(worksheet="Records", data=updated_df)
+                        
+                        st.query_params.clear()
+                        for key in list(st.session_state.keys()):
+                            del st.session_state[key]
+                        
+                        st.success("全てのデータを削除しました。初期化します...")
+                        st.markdown('<meta http-equiv="refresh" content="0.1; url=./">', unsafe_allow_html=True)
+                        st.stop()
+
+    # --- 表示判定 ---
+    is_authenticated = (saved_real_name != "" and saved_nickname != "" and u_pass != "")
+
+    if not is_authenticated:
+        st.warning("左側のサイドバーで情報を入力し、「ログイン情報を保持して認証」ボタンを押してください。")
+        return
+
+    # --- メインコンテンツ ---
+    tab1, tab2, tab3 = st.tabs(["📊 今日の収支", "🏆 ランキング", "📈 マイデータ"])
+
+    with tab1:
+        st.subheader(f"こんにちは、{u_nickname} さん")
+        
+        # 保存直後のスコア表示
+        if "last_score" in st.session_state:
+            st.success(f"✅ データを保存しました！")
+            st.metric(label="本日の獲得ポイント", value=f"{st.session_state['last_score']} DP")
+            # メッセージを確認させるためここでは削除せず、操作時に消えるようにします
+        
+        target_date = st.date_input("対象日", 
+                                    min_value=date.today() - timedelta(days=2), 
+                                    max_value=date.today())
+        
+        hashed_input_pass = make_hash(u_pass)
+        existing = all_data[(all_data['real_name'] == u_real_name) & (all_data['date'] == str(target_date))]
+        
+        can_edit = True
+        if not existing.empty:
+            if str(existing.iloc[0].get('password', '')) != hashed_input_pass:
+                st.error("❌ パスワードが一致しません。")
+                can_edit = False
+            elif existing.iloc[0]['entry_date'] != str(date.today()):
+                can_edit = False
+                st.error("⚠️ 訂正は当日のみ可能です。")
+
+        if can_edit:
+            col1, col2 = st.columns(2)
+            with col1:
+                st.markdown("#### 資産 (+)")
+                a_sel = st.multiselect("良い習慣", list(POINT_MASTER["資産"].keys()))
+                s_sel = st.multiselect("特別利益", list(POINT_MASTER["特別利益"].keys()))
+            with col2:
+                st.markdown("#### 負債 (-)")
+                l_sel = st.multiselect("悪い習慣", list(POINT_MASTER["負債"].keys()))
+                confess = st.checkbox("「正直な懺悔」をする（負債半減）")
+            
+            if st.button("この内容で保存する"):
+                score = sum(POINT_MASTER["資産"][i] for i in a_sel) + \
+                        sum(POINT_MASTER["特別利益"][i] for i in s_sel) + \
+                        (sum(POINT_MASTER["負債"][i] for i in l_sel) * (0.5 if confess else 1))
+                
+                new_row = pd.DataFrame([{
+                    "real_name": u_real_name, "password": hashed_input_pass, "nickname": u_nickname, 
+                    "team": t_name, "date": str(target_date), "points": score, "entry_date": str(date.today())
+                }])
+                
+                updated_df = pd.concat([
+                    all_data[~((all_data['real_name'] == u_real_name) & (all_data['date'] == str(target_date)))], 
+                    new_row
+                ])
+                
+                conn.update(worksheet="Records", data=updated_df)
+                st.session_state["last_score"] = score  # スコアをセッションに保持
+                st.balloons()
+                time.sleep(1)
+                st.rerun()
+
+    with tab2:
+        st.subheader("🏆 チーム別・個人ランキング")
+        if not all_data.empty:
+            summary = all_data.groupby(['nickname', 'team'])['points'].sum().reset_index()
+            summary['称号'] = summary['points'].apply(get_brain_rank)
+            st.dataframe(summary.sort_values("points", ascending=False), use_container_width=True, hide_index=True)
+
+    with tab3:
+        st.subheader("📈 あなたの成長記録")
+        user_data = all_data[all_data['real_name'] == u_real_name].sort_values("date")
+        if not user_data.empty:
+            total = user_data['points'].sum()
+            st.metric("累計ドーパミンポイント", f"{total} DP")
+            st.line_chart(user_data.set_index("date")["points"])
+        else:
+            st.info("データがまだありません。")
+
+if __name__ == "__main__":
+    main()

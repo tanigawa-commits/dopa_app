@@ -14,12 +14,12 @@ def make_hash(password):
 
 def load_data():
     try:
+        # ttl="0m"でキャッシュを無効化し、常に最新のスプレッドシートを読み込む
         return conn.read(worksheet="Records", ttl="0m")
     except:
         return pd.DataFrame(columns=["real_name", "password", "nickname", "team", "date", "points", "entry_date"])
 
-# --- 2. 各種リスト・マスタ定義 (関数の外、かつmainより上に配置) ---
-# 先頭に空白（未選択）の選択肢を追加
+# --- 2. リスト・マスタ定義 ---
 TEAM_OPTIONS = ["-- 選択してください --", "経営層", "第一システム部", "第二システム部", "第三システム部", "第四システム部", "営業部", "総務部", "新人"]
 
 POINT_MASTER = {
@@ -52,181 +52,42 @@ def main():
     
     all_data = load_data()
 
-    # --- 1. ログイン・ユーザー設定（サイドバー） ---
+    # --- サイドバー：ログイン / ユーザー設定 ---
     with st.sidebar:
         st.header("🔑 ログイン / 会員登録")
         u_real_name = st.text_input("氏名（実名）", value=saved_real_name, key="login_rn")
         u_pass = st.text_input("パスワード", type="password", key="login_pw")
         u_nickname = st.text_input("ニックネーム", value=saved_nickname, key="login_nn")
         
-        # チーム選択：初期値をリストの先頭（空白用）に設定
         default_team_idx = TEAM_OPTIONS.index(saved_team) if saved_team in TEAM_OPTIONS else 0
         t_name = st.selectbox("所属チーム", TEAM_OPTIONS, index=default_team_idx, key="login_team")
         
-        # ログインボタン
         login_btn = st.button("ログイン情報を保持して認証")
         
         if login_btn:
-            # 1. 未入力チェック
             if not u_real_name or not u_pass or not u_nickname or t_name == TEAM_OPTIONS[0]:
                 st.error("全項目を入力し、所属チームを選択してください。")
             else:
-                # 2. 既存ユーザーの照合
-                # 氏名が一致するデータを取得
                 user_records = all_data[all_data['real_name'] == u_real_name]
-                
+                hashed_input_pass = make_hash(u_pass)
+
                 if not user_records.empty:
-                    # DBにある最初の1件を取得して照合
+                    # 既存ユーザー照合
                     db_pass = str(user_records.iloc[0].get('password', ''))
                     db_nick = str(user_records.iloc[0].get('nickname', ''))
                     db_team = str(user_records.iloc[0].get('team', ''))
                     
-                    # 判定開始
-                    hashed_input_pass = make_hash(u_pass)
-                    
                     if db_pass != hashed_input_pass:
                         st.error("❌ パスワードが正しくありません。")
                     elif db_nick != u_nickname:
-                        st.error(f"❌ ニックネームが登録情報（{db_nick[:1]}...）と一致しません。")
+                        st.error(f"❌ ニックネームが登録情報と一致しません。")
                     elif db_team != t_name:
                         st.error(f"❌ 所属チームが登録情報と一致しません。")
                     else:
-                        # すべて一致した場合のみログイン許可
-                        st.query_params["rn"] = u_real_name
-                        st.query_params["nn"] = u_nickname
-                        st.query_params["t"] = t_name
+                        st.query_params.update(rn=u_real_name, nn=u_nickname, t=t_name)
                         st.success(f"🎉 認証に成功しました！ようこそ、{u_nickname} さん。")
-                        time.sleep(2)
+                        time.sleep(1.5)
                         st.rerun()
                 else:
-                    # 新規登録の場合（氏名がDBに存在しない場合）
-                    st.info("🆕 新規ユーザーとして認証情報を保持します。最初のデータを保存した際に正式登録されます。")
-                    st.query_params["rn"] = u_real_name
-                    st.query_params["nn"] = u_nickname
-                    st.query_params["t"] = t_name
-                    time.sleep(2)
-                    st.rerun()
-
-        # アカウント削除
-        st.divider()
-        with st.expander("⚠️ アカウント・全データ削除"):
-            st.write("この操作は取り消せません。")
-            del_real_name = st.text_input("削除確認：登録した氏名を入力", key="del_rn")
-            del_pass = st.text_input("削除確認：パスワードを入力", type="password", key="del_pw")
-            del_confirm = st.checkbox("全てのデータを削除することに同意します", key="del_chk")
-            
-            if st.button("アカウント削除を確定する"):
-                if not del_confirm:
-                    st.error("同意チェックを入れてください。")
-                elif not del_real_name or not del_pass:
-                    st.error("本人確認情報を入力してください。")
-                else:
-                    hashed_del_pass = make_hash(del_pass)
-                    user_records = all_data[all_data['real_name'] == del_real_name]
-                    
-                    password_correct = True
-                    if not user_records.empty:
-                        if str(user_records.iloc[0].get('password', '')) != hashed_del_pass:
-                            password_correct = False
-                    
-                    if not password_correct:
-                        st.error("パスワードが一致しません。")
-                    else:
-                        if not user_records.empty:
-                            updated_df = all_data[all_data['real_name'] != del_real_name]
-                            conn.update(worksheet="Records", data=updated_df)
-                        
-                        st.query_params.clear()
-                        for key in list(st.session_state.keys()):
-                            del st.session_state[key]
-                        
-                        st.success("クリーンアップを完了しました。初期画面に戻ります...")
-                        st.markdown('<meta http-equiv="refresh" content="0.1; url=./">', unsafe_allow_html=True)
-                        st.stop()
-
-    # --- 2. メイン画面の表示判定 ---
-    is_authenticated = (
-        saved_real_name != "" and 
-        saved_nickname != "" and 
-        u_pass != "" 
-    )
-
-    if not is_authenticated:
-        st.warning("左側のサイドバーで情報を入力し、「ログイン情報を保持して認証」ボタンを押してください。")
-        return
-
-    # --- 3. メインコンテンツ ---
-    tab1, tab2, tab3 = st.tabs(["📊 今日の収支", "🏆 ランキング", "📈 マイデータ"])
-
-    with tab1:
-        st.subheader(f"こんにちは、{u_nickname} さん")
-        target_date = st.date_input("対象日", 
-                                    min_value=date.today() - timedelta(days=2), 
-                                    max_value=date.today())
-        
-        hashed_input_pass = make_hash(u_pass)
-        existing = all_data[(all_data['real_name'] == u_real_name) & (all_data['date'] == str(target_date))]
-        
-        can_edit = True
-        if not existing.empty:
-            if str(existing.iloc[0].get('password', '')) != hashed_input_pass:
-                st.error("❌ パスワードが一致しません。")
-                can_edit = False
-            elif existing.iloc[0]['entry_date'] != str(date.today()):
-                can_edit = False
-                st.error("⚠️ 訂正は当日のみ可能です。")
-
-        if can_edit:
-            col1, col2 = st.columns(2)
-            with col1:
-                st.markdown("#### 資産 (+)")
-                a_sel = st.multiselect("良い習慣", list(POINT_MASTER["資産"].keys()))
-                s_sel = st.multiselect("特別利益", list(POINT_MASTER["特別利益"].keys()))
-            with col2:
-                st.markdown("#### 負債 (-)")
-                l_sel = st.multiselect("悪い習慣", list(POINT_MASTER["負債"].keys()))
-                confess = st.checkbox("「正直な懺悔」をする（負債半減）")
-            
-            if st.button("この内容で保存する"):
-                score = sum(POINT_MASTER["資産"][i] for i in a_sel) + \
-                        sum(POINT_MASTER["特別利益"][i] for i in s_sel) + \
-                        (sum(POINT_MASTER["負債"][i] for i in l_sel) * (0.5 if confess else 1))
-                new_row = pd.DataFrame([{
-                    "real_name": u_real_name, "password": hashed_input_pass, "nickname": u_nickname, 
-                    "team": t_name, "date": str(target_date), "points": score, "entry_date": str(date.today())
-                }])
-                
-                updated_df = pd.concat([
-                    all_data[~((all_data['real_name'] == u_real_name) & (all_data['date'] == str(target_date)))], 
-                    new_row
-                ])
-                
-                # 1. スプレッドシートを更新
-                conn.update(worksheet="Records", data=updated_df)
-                
-                # 2. ★重要：メッセージを表示した直後に画面をリロードする
-                st.success(f"✅ {target_date} のデータを保存しました！")
-                st.balloons()
-                
-                # 画面を再起動することで、load_data()が走り、最新のランキングが表示されます
-                time.sleep(1) # バルーンを見せるための短い待機
-                st.rerun()
-
-    with tab2:
-        st.subheader("ランキング")
-        if not all_data.empty:
-            summary = all_data.groupby(['nickname', 'team'])['points'].sum().reset_index()
-            summary['称号'] = summary['points'].apply(get_brain_rank)
-            st.dataframe(summary.sort_values("points", ascending=False), use_container_width=True)
-
-    with tab3:
-        user_data = all_data[all_data['real_name'] == u_real_name].sort_values("date")
-        if not user_data.empty:
-            total = user_data['points'].sum()
-            st.metric("累計ポイント", f"{total} DP")
-            st.line_chart(user_data.set_index("date")["points"])
-
-if __name__ == "__main__":
-    main()
-
-
+                    # 新規ユーザー
+                    st

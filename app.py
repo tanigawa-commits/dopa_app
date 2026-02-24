@@ -88,7 +88,6 @@ def main():
         with st.expander("⚠️ アカウント・全データ削除"):
             st.write("この操作は取り消せません。")
             
-            # 削除専用の入力欄
             del_real_name = st.text_input("削除確認：登録した氏名を入力", key="del_rn")
             del_pass = st.text_input("削除確認：パスワードを入力", type="password", key="del_pw")
             del_confirm = st.checkbox("全てのデータを削除することに同意します", key="del_chk")
@@ -99,34 +98,35 @@ def main():
                 elif not del_real_name or not del_pass:
                     st.error("本人確認情報を入力してください。")
                 else:
+                    # ハッシュ化して照合準備
                     hashed_del_pass = make_hash(del_pass)
                     user_records = all_data[all_data['real_name'] == del_real_name]
                     
-                    if user_records.empty:
-                        st.error("該当データが見つかりません。")
-                    elif str(user_records.iloc[0].get('password', '')) != hashed_del_pass:
+                    # --- 修正ポイント：データがなくてもクリーンアップを実行する ---
+                    
+                    # 1. パスワードチェック（データがある場合のみ実行）
+                    password_correct = True
+                    if not user_records.empty:
+                        if str(user_records.iloc[0].get('password', '')) != hashed_del_pass:
+                            password_correct = False
+                    
+                    if not password_correct:
                         st.error("パスワードが一致しません。")
                     else:
-                        # 1. DBから本人データを削除
-                        updated_df = all_data[all_data['real_name'] != del_real_name]
-                        conn.update(worksheet="Records", data=updated_df)
+                        # 2. DBから削除（データがある場合のみ）
+                        if not user_records.empty:
+                            updated_df = all_data[all_data['real_name'] != del_real_name]
+                            conn.update(worksheet="Records", data=updated_df)
                         
-                        # 2. 内部情報を空にする
+                        # 3. ブラウザ保持情報（URL）とセッションを完全にクリア
                         st.query_params.clear()
                         for key in list(st.session_state.keys()):
                             del st.session_state[key]
                         
-                        # 3. ★最終手段：HTMLメタタグによる「強制ページ遷移」
-                        # 画面にメッセージを出しつつ、0.1秒後にパラメータなしのトップへ強制移動させます。
-                        # これにより「手動リロード」と全く同じ状態を強制的に作り出します。
-                        st.success("全てのデータを削除しました。初期化しています...")
-                        
-                        st.markdown(
-                            f'<meta http-equiv="refresh" content="0.1; url=./">', 
-                            unsafe_allow_html=True
-                        )
-                        
-                        # 以降の描画を停止してジャンプを待つ
+                        # 4. 強制リロード（meta refresh方式）
+                        # これにより、未登録の状態でも入力欄がすべて空になり、初期画面に戻ります
+                        st.success("クリーンアップを完了しました。初期画面に戻ります...")
+                        st.markdown('<meta http-equiv="refresh" content="0.1; url=./">', unsafe_allow_html=True)
                         st.stop()
     
     # --- ログイン判定の直前にリセット後の処理を追加 ---
@@ -217,6 +217,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 

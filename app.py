@@ -14,9 +14,7 @@ def make_hash(password):
 
 def load_data():
     try:
-        # 必要な列をすべて含むデータフレームを読み込む
         df = conn.read(worksheet="Records", ttl="0m")
-        # 既存DBに新しい列がない場合の補完
         expected_cols = ["real_name", "password", "nickname", "team", "date", "points", "total_points", 
                          "entry_date", "selected_items", "learning_type", "learning_minutes"]
         for col in expected_cols:
@@ -27,7 +25,7 @@ def load_data():
         return pd.DataFrame(columns=["real_name", "password", "nickname", "team", "date", "points", "total_points", 
                                      "entry_date", "selected_items", "learning_type", "learning_minutes"])
 
-# --- 2. リスト・マスタ定義 (PPT P22-27準拠) ---
+# --- 2. リスト・マスタ定義 (PPT準拠、一部削除) ---
 TEAM_OPTIONS = ["-- 選択してください --", "経営層", "第一システム部", "第二システム部", "第三システム部", "第四システム部", "営業部", "総務部", "新人"]
 
 # 投資型 (加点)
@@ -39,13 +37,18 @@ INVESTMENT_MASTER = {
 }
 
 # 借金型 (減点)
+# 「強烈なポルノ視聴」と「不倫・浮気」を削除
 DEBT_MASTER = {
     "借金をしてのギャンブル": 10.0, "イヤホンでの爆音視聴": 9.6, "スマホゲームの課金ガチャ": 9.5,
-    "アルコール過剰摂取(泥酔)": 9.1, "強烈なポルノ視聴": 9.0, "SNSでバズる体験": 8.8,
+    "アルコール過剰摂取(泥酔)": 9.1, "SNSでバズる体験": 8.8,
     "YouTubeショート・TikTok": 8.5, "深夜のジャンクフード・ドカ食い": 8.0, "エナジードリンクの常飲": 7.8,
-    "不倫・浮気": 7.2, "SNSのいいねに一喜一憂": 6.5, "陰口やゴシップで盛り上がる": 5.7,
+    "SNSのいいねに一喜一憂": 6.5, "陰口やゴシップで盛り上がる": 5.7,
     "TVをダラダラ見続ける": 4.5, "掃除をしない": 3.8, "夜更かし": 2.0
 }
+
+# 表示用の選択肢リスト作成（ポイント数を表示）
+INV_OPTIONS = [f"{k} (+{v})" for k, v in INVESTMENT_MASTER.items()]
+DEBT_OPTIONS = [f"{k} (-{v})" for k, v in DEBT_MASTER.items()]
 
 # 学習項目
 LEARNING_OPTIONS = ["読書", "動画視聴", "対面式学習", "プログラム作成", "ネット記事調査"]
@@ -58,7 +61,9 @@ def get_brain_rank(points):
 
 # --- 3. メイン処理 ---
 def main():
-    st.title("🧠 脳内ドーパミン投資・収支決算書")
+    # 画面タイトルとサブタイトル
+    st.title("🧠 脳内ドーパミン収支報告")
+    st.subheader("幸せホルモンを育てよう！")
     
     saved_real_name = st.query_params.get("rn", "")
     saved_nickname = st.query_params.get("nn", "")
@@ -85,7 +90,6 @@ def main():
                 time.sleep(0.5)
                 st.rerun()
 
-    # --- 表示判定 ---
     if not (saved_real_name and saved_nickname and u_pass):
         st.warning("サイドバーでログインしてください。")
         return
@@ -93,29 +97,31 @@ def main():
     tab1, tab2, tab3 = st.tabs(["📊 今日の記録", "🏆 ランキング", "📈 マイデータ"])
 
     with tab1:
-        st.subheader(f"投資と余白のバランスを整えましょう、{u_nickname} さん")
+        # 挨拶文の変更
+        st.write(f"### 投資と借金のバランスを整えましょう、{u_nickname} さん")
         target_date = st.date_input("対象日", value=date.today())
         
         col1, col2, col3 = st.columns(3)
         with col1:
             st.markdown("#### 🟢 投資型 (+)")
-            inv_sel = st.multiselect("未来を創る行動", list(INVESTMENT_MASTER.keys()))
+            inv_sel_raw = st.multiselect("未来を創る行動", INV_OPTIONS, placeholder="-- 未選択 --")
         with col2:
             st.markdown("#### 🔴 借金型 (-)")
-            debt_sel = st.multiselect("エネルギーの前借り", list(DEBT_MASTER.keys()))
+            debt_sel_raw = st.multiselect("エネルギーの前借り", DEBT_OPTIONS, placeholder="-- 未選択 --")
         with col3:
             st.markdown("#### 📚 自己学習")
             l_type = st.selectbox("学習項目", ["-- 未選択 --"] + LEARNING_OPTIONS)
-            l_min = st.number_input("学習時間 (分)", min_value=0, max_value=600, step=10)
+            # スクロール形式（selectbox）に変更、上限600分
+            l_min = st.selectbox("学習時間 (分)", options=list(range(0, 601, 10)), index=0)
 
         if st.button("この内容で決算する"):
-            # ポイント計算 (投資型は加点、借金型は減点)
-            day_points = sum(INVESTMENT_MASTER[i] for i in inv_sel) - sum(DEBT_MASTER[i] for i in debt_sel)
+            # 選択された表示名からキーを抽出して計算
+            inv_keys = [s.split(" (+")[0] for s in inv_sel_raw]
+            debt_keys = [s.split(" (-")[0] for s in debt_sel_raw]
             
-            # 選択項目を文字列にまとめる
-            selected_items_str = ", ".join(inv_sel + debt_sel)
+            day_points = sum(INVESTMENT_MASTER[k] for k in inv_keys) - sum(DEBT_MASTER[k] for k in debt_keys)
+            selected_items_str = ", ".join(inv_keys + debt_keys)
             
-            # 累積値の計算
             user_past_data = all_data[all_data['real_name'] == u_real_name]
             past_total = user_past_data['points'].sum()
             new_total = past_total + day_points
@@ -130,67 +136,9 @@ def main():
                 "learning_minutes": l_min
             }])
             
-            # 同一実名＋同一日のデータがあれば上書き、なければ追加
             updated_df = pd.concat([
                 all_data[~((all_data['real_name'] == u_real_name) & (all_data['date'] == str(target_date)))], 
                 new_row
             ]).reset_index(drop=True)
             
-            conn.update(worksheet="Records", data=updated_df)
-            st.balloons()
-            st.success(f"記録しました！ 今日のDP収支: {day_points:+.1f} / 学習時間: {l_min}分")
-            time.sleep(1)
-            st.rerun()
-
-    with tab2:
-        col_rank1, col_rank2 = st.columns(2)
-        with col_rank1:
-            st.subheader("🏆 DP収支ランキング")
-            if not all_data.empty:
-                rank_df = all_data.groupby(['nickname', 'team'])['points'].sum().reset_index()
-                rank_df['称号'] = rank_df['points'].apply(get_brain_rank)
-                st.dataframe(rank_df.sort_values("points", ascending=False), use_container_width=True, hide_index=True)
-        
-        with col_rank2:
-            st.subheader("📖 自己学習ランキング")
-            if not all_data.empty:
-                learn_rank = all_data.groupby(['nickname', 'team'])['learning_minutes'].sum().reset_index()
-                st.dataframe(learn_rank.sort_values("learning_minutes", ascending=False).rename(columns={'learning_minutes':'合計学習時間(分)'}), 
-                             use_container_width=True, hide_index=True)
-
-    with tab3:
-        user_data = all_data[all_data['real_name'] == u_real_name].copy()
-        if not user_data.empty:
-            user_data['date'] = pd.to_datetime(user_data['date'])
-            user_data = user_data.sort_values("date")
-
-            st.subheader("📈 ドーパミン投資推移")
-            st.line_chart(user_data.set_index("date")["total_points"])
-            
-            st.subheader("📋 収支履歴")
-            history_df = user_data.copy()
-            history_df['日付'] = history_df['date'].dt.strftime('%Y-%m-%d')
-            st.dataframe(
-                history_df[['日付', 'points', 'selected_items', 'total_points']].rename(
-                    columns={'points':'収支', 'selected_items':'選択した項目', 'total_points':'累積DP'}
-                ), 
-                hide_index=True, use_container_width=True
-            )
-
-            st.divider()
-            st.subheader("📚 自己学習履歴")
-            learn_history = user_data[user_data['learning_minutes'] > 0].copy()
-            if not learn_history.empty:
-                learn_history['日付'] = learn_history['date'].dt.strftime('%Y-%m-%d')
-                st.metric("総学習時間", f"{learn_history['learning_minutes'].sum()} 分")
-                st.dataframe(
-                    learn_history[['日付', 'learning_type', 'learning_minutes']].rename(
-                        columns={'learning_type':'学習項目', 'learning_minutes':'時間(分)'}
-                    ),
-                    hide_index=True, use_container_width=True
-                )
-        else:
-            st.info("データがまだありません。")
-
-if __name__ == "__main__":
-    main()
+            conn.update(worksheet="Records

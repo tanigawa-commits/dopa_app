@@ -6,7 +6,7 @@ import hashlib
 import time
 
 # --- 1. アプリ設定とDB接続 ---
-st.set_page_config(page_title="Dopa-Balance", layout="wide")
+st.set_page_config(page_title="Dopa-Balance Pro", layout="wide")
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 def make_hash(password):
@@ -14,37 +14,51 @@ def make_hash(password):
 
 def load_data():
     try:
-        # 累積値(total_points)列を含むデータを読み込む
-        return conn.read(worksheet="Records", ttl="0m")
+        # 必要な列をすべて含むデータフレームを読み込む
+        df = conn.read(worksheet="Records", ttl="0m")
+        # 既存DBに新しい列がない場合の補完
+        expected_cols = ["real_name", "password", "nickname", "team", "date", "points", "total_points", 
+                         "entry_date", "selected_items", "learning_type", "learning_minutes"]
+        for col in expected_cols:
+            if col not in df.columns:
+                df[col] = None
+        return df
     except:
-        # 初回起動時や列がない場合
-        return pd.DataFrame(columns=["real_name", "password", "nickname", "team", "date", "points", "total_points", "entry_date"])
+        return pd.DataFrame(columns=["real_name", "password", "nickname", "team", "date", "points", "total_points", 
+                                     "entry_date", "selected_items", "learning_type", "learning_minutes"])
 
-# --- 2. リスト・マスタ定義 ---
+# --- 2. リスト・マスタ定義 (PPT P22-27準拠) ---
 TEAM_OPTIONS = ["-- 選択してください --", "経営層", "第一システム部", "第二システム部", "第三システム部", "第四システム部", "営業部", "総務部", "新人"]
 
-POINT_MASTER = {
-    "資産": {
-        "ウォーキング(1k歩毎)": 10, "階段利用": 30, "朝活": 50, "筋トレ": 40,
-        "7h以上睡眠": 50, "脱スマホ入眠": 40, "ベジ・ファースト": 20, "休肝日": 50
-    },
-    "負債": {
-        "SNSダラダラ": -30, "寝床スマホ": -50, "深夜ゲーム": -60,
-        "ドカ食い": -40, "締めのアレ": -50, "座りっぱなし": -30
-    },
-    "特別利益": {
-        "衝動のリセット": 100, "デトックス成功": 80, "運動への変換": 100
-    }
+# 投資型 (加点)
+INVESTMENT_MASTER = {
+    "楽器の即興演奏": 9.5, "ライブに行く": 9.3, "スキー・スノーボード": 9.2, "サウナと水風呂": 9.0,
+    "海で泳ぐ": 8.8, "作曲・DTM": 8.4, "長期プロジェクトの完遂": 8.2, "追い込む筋トレ": 8.1,
+    "小説を読む": 8.0, "キャンプ": 7.1, "映画鑑賞": 6.7, "部屋の徹底的な断捨離": 6.0,
+    "家庭菜園": 5.4, "犬の散歩": 5.0, "十分な睡眠": 2.0, "何もしないでボーッとする": 1.0
 }
 
+# 借金型 (減点)
+DEBT_MASTER = {
+    "借金をしてのギャンブル": 10.0, "イヤホンでの爆音視聴": 9.6, "スマホゲームの課金ガチャ": 9.5,
+    "アルコール過剰摂取(泥酔)": 9.1, "強烈なポルノ視聴": 9.0, "SNSでバズる体験": 8.8,
+    "YouTubeショート・TikTok": 8.5, "深夜のジャンクフード・ドカ食い": 8.0, "エナジードリンクの常飲": 7.8,
+    "不倫・浮気": 7.2, "SNSのいいねに一喜一憂": 6.5, "陰口やゴシップで盛り上がる": 5.7,
+    "TVをダラダラ見続ける": 4.5, "掃除をしない": 3.8, "夜更かし": 2.0
+}
+
+# 学習項目
+LEARNING_OPTIONS = ["読書", "動画視聴", "対面式学習", "プログラム作成", "ネット記事調査"]
+
 def get_brain_rank(points):
-    if points >= 5000: return "ゴールド脳（Prefrontal Hero）"
-    elif points >= 3000: return "シルバー脳（Control Master）"
+    if points >= 500: return "プラチナ脳（Flow Master）"
+    elif points >= 300: return "ゴールド脳（Investment King）"
+    elif points >= 100: return "シルバー脳（Self-Control）"
     else: return "ブロンズ脳（Dopamine Beginner）"
 
 # --- 3. メイン処理 ---
 def main():
-    st.title("🧠 脳内ドーパミン収支決算書")
+    st.title("🧠 脳内ドーパミン投資・収支決算書")
     
     saved_real_name = st.query_params.get("rn", "")
     saved_nickname = st.query_params.get("nn", "")
@@ -52,9 +66,9 @@ def main():
     
     all_data = load_data()
 
-    # --- サイドバー：ログイン / ユーザー設定 ---
+    # --- サイドバー：ログイン ---
     with st.sidebar:
-        st.header("🔑 ログイン / 会員登録")
+        st.header("🔑 ユーザー認証")
         u_real_name = st.text_input("氏名（実名）", value=saved_real_name, key="login_rn")
         u_pass = st.text_input("パスワード", type="password", key="login_pw")
         u_nickname = st.text_input("ニックネーム", value=saved_nickname, key="login_nn")
@@ -62,178 +76,121 @@ def main():
         default_team_idx = TEAM_OPTIONS.index(saved_team) if saved_team in TEAM_OPTIONS else 0
         t_name = st.selectbox("所属チーム", TEAM_OPTIONS, index=default_team_idx, key="login_team")
         
-        login_btn = st.button("ログイン情報を保持して認証")
-        
-        if login_btn:
+        if st.button("認証"):
             if not u_real_name or not u_pass or not u_nickname or t_name == TEAM_OPTIONS[0]:
-                st.error("全項目を入力し、所属チームを選択してください。")
+                st.error("全項目を入力してください。")
             else:
-                user_records = all_data[all_data['real_name'] == u_real_name]
-                hashed_input_pass = make_hash(u_pass)
-
-                if not user_records.empty:
-                    db_pass = str(user_records.iloc[0].get('password', ''))
-                    db_nick = str(user_records.iloc[0].get('nickname', ''))
-                    db_team = str(user_records.iloc[0].get('team', ''))
-                    
-                    if db_pass != hashed_input_pass:
-                        st.error("❌ パスワードが正しくありません。")
-                    elif db_nick != u_nickname:
-                        st.error(f"❌ ニックネームが登録情報と一致しません。")
-                    elif db_team != t_name:
-                        st.error(f"❌ 所属チームが登録情報と一致しません。")
-                    else:
-                        st.query_params.update(rn=u_real_name, nn=u_nickname, t=t_name)
-                        st.success(f"🎉 認証に成功しました！")
-                        time.sleep(1)
-                        st.rerun()
-                else:
-                    st.query_params.update(rn=u_real_name, nn=u_nickname, t=t_name)
-                    st.info("🆕 新規ユーザーとして認証しました。")
-                    time.sleep(1)
-                    st.rerun()
-
-        # アカウント削除
-        st.divider()
-        with st.expander("⚠️ アカウント・全データ削除"):
-            st.write("この操作は取り消せません。")
-            del_real_name = st.text_input("削除確認：実名入力", key="del_rn")
-            del_pass = st.text_input("削除確認：パスワード", type="password", key="del_pw")
-            del_confirm = st.checkbox("データの削除に同意する", key="del_chk")
-            
-            if st.button("アカウント削除を確定する"):
-                if del_confirm and del_real_name and del_pass:
-                    hashed_del_pass = make_hash(del_pass)
-                    user_records = all_data[all_data['real_name'] == del_real_name]
-                    
-                    if not user_records.empty and str(user_records.iloc[0].get('password', '')) != hashed_del_pass:
-                        st.error("パスワードが一致しません。")
-                    else:
-                        if not user_records.empty:
-                            updated_df = all_data[all_data['real_name'] != del_real_name]
-                            conn.update(worksheet="Records", data=updated_df)
-                        
-                        st.query_params.clear()
-                        for key in list(st.session_state.keys()): del st.session_state[key]
-                        st.success("削除完了。リフレッシュします...")
-                        st.markdown('<meta http-equiv="refresh" content="0.1; url=./">', unsafe_allow_html=True)
-                        st.stop()
-
-    # --- 表示判定 ---
-    is_authenticated = (saved_real_name != "" and saved_nickname != "" and u_pass != "")
-    if not is_authenticated:
-        st.warning("左側のサイドバーで情報を入力し、認証ボタンを押してください。")
-        return
-
-    # --- メインコンテンツ ---
-    tab1, tab2, tab3 = st.tabs(["📊 今日の収支", "🏆 ランキング", "📈 マイデータ"])
-
-    with tab1:
-        st.subheader(f"こんにちは、{u_nickname} さん")
-        if "last_score" in st.session_state:
-            st.success(f"✅ データを保存しました！ (獲得: {st.session_state['last_score']} DP)")
-        
-        target_date = st.date_input("対象日", min_value=date.today() - timedelta(days=2), max_value=date.today())
-        hashed_input_pass = make_hash(u_pass)
-        
-        # 既存データの確認
-        existing_user_data = all_data[all_data['real_name'] == u_real_name].sort_values("date")
-        existing_day = existing_user_data[existing_user_data['date'] == str(target_date)]
-        
-        can_edit = True
-        if not existing_day.empty:
-            if str(existing_day.iloc[0].get('password', '')) != hashed_input_pass:
-                st.error("❌ パスワードが一致しません。")
-                can_edit = False
-            elif existing_day.iloc[0]['entry_date'] != str(date.today()):
-                can_edit = False
-                st.error("⚠️ 訂正は当日のみ可能です。")
-
-        if can_edit:
-            col1, col2 = st.columns(2)
-            with col1:
-                st.markdown("#### 資産 (+)")
-                a_sel = st.multiselect("良い習慣", list(POINT_MASTER["資産"].keys()))
-                s_sel = st.multiselect("特別利益", list(POINT_MASTER["特別利益"].keys()))
-            with col2:
-                st.markdown("#### 負債 (-)")
-                l_sel = st.multiselect("悪い習慣", list(POINT_MASTER["負債"].keys()))
-                confess = st.checkbox("「正直な懺悔」をする（負債半減）")
-            
-            if st.button("この内容で保存する"):
-                # 今日のスコア計算
-                day_score = sum(POINT_MASTER["資産"][i] for i in a_sel) + \
-                            sum(POINT_MASTER["特別利益"][i] for i in s_sel) + \
-                            (sum(POINT_MASTER["負債"][i] for i in l_sel) * (0.5 if confess else 1))
-                
-                # --- 累積値の計算 ---
-                # 今回の対象日を除いた、過去の全累計を取得
-                other_days_data = all_data[(all_data['real_name'] == u_real_name) & (all_data['date'] != str(target_date))]
-                past_total = other_days_data['points'].sum()
-                new_total = past_total + day_score
-                
-                new_row = pd.DataFrame([{
-                    "real_name": u_real_name, "password": hashed_input_pass, "nickname": u_nickname, 
-                    "team": t_name, "date": str(target_date), "points": day_score, 
-                    "total_points": new_total, # ここで累積値を保持
-                    "entry_date": str(date.today())
-                }])
-                
-                updated_df = pd.concat([
-                    all_data[~((all_data['real_name'] == u_real_name) & (all_data['date'] == str(target_date)))], 
-                    new_row
-                ])
-                
-                conn.update(worksheet="Records", data=updated_df)
-                st.session_state["last_score"] = day_score
-                st.balloons()
-                time.sleep(1)
+                st.query_params.update(rn=u_real_name, nn=u_nickname, t=t_name)
+                st.success("認証完了")
+                time.sleep(0.5)
                 st.rerun()
 
+    # --- 表示判定 ---
+    if not (saved_real_name and saved_nickname and u_pass):
+        st.warning("サイドバーでログインしてください。")
+        return
+
+    tab1, tab2, tab3 = st.tabs(["📊 今日の記録", "🏆 ランキング", "📈 マイデータ"])
+
+    with tab1:
+        st.subheader(f"投資と余白のバランスを整えましょう、{u_nickname} さん")
+        target_date = st.date_input("対象日", value=date.today())
+        
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.markdown("#### 🟢 投資型 (+)")
+            inv_sel = st.multiselect("未来を創る行動", list(INVESTMENT_MASTER.keys()))
+        with col2:
+            st.markdown("#### 🔴 借金型 (-)")
+            debt_sel = st.multiselect("エネルギーの前借り", list(DEBT_MASTER.keys()))
+        with col3:
+            st.markdown("#### 📚 自己学習")
+            l_type = st.selectbox("学習項目", ["-- 未選択 --"] + LEARNING_OPTIONS)
+            l_min = st.number_input("学習時間 (分)", min_value=0, max_value=600, step=10)
+
+        if st.button("この内容で決算する"):
+            # ポイント計算 (投資型は加点、借金型は減点)
+            day_points = sum(INVESTMENT_MASTER[i] for i in inv_sel) - sum(DEBT_MASTER[i] for i in debt_sel)
+            
+            # 選択項目を文字列にまとめる
+            selected_items_str = ", ".join(inv_sel + debt_sel)
+            
+            # 累積値の計算
+            user_past_data = all_data[all_data['real_name'] == u_real_name]
+            past_total = user_past_data['points'].sum()
+            new_total = past_total + day_points
+            
+            hashed_input_pass = make_hash(u_pass)
+            new_row = pd.DataFrame([{
+                "real_name": u_real_name, "password": hashed_input_pass, "nickname": u_nickname, 
+                "team": t_name, "date": str(target_date), "points": round(day_points, 1), 
+                "total_points": round(new_total, 1), "entry_date": str(date.today()),
+                "selected_items": selected_items_str,
+                "learning_type": l_type if l_type != "-- 未選択 --" else None,
+                "learning_minutes": l_min
+            }])
+            
+            # 同一実名＋同一日のデータがあれば上書き、なければ追加
+            updated_df = pd.concat([
+                all_data[~((all_data['real_name'] == u_real_name) & (all_data['date'] == str(target_date)))], 
+                new_row
+            ]).reset_index(drop=True)
+            
+            conn.update(worksheet="Records", data=updated_df)
+            st.balloons()
+            st.success(f"記録しました！ 今日のDP収支: {day_points:+.1f} / 学習時間: {l_min}分")
+            time.sleep(1)
+            st.rerun()
+
     with tab2:
-        st.subheader("🏆 ランキング")
-        if not all_data.empty:
-            # 最新の累積値（ユーザーごとの合計）で集計
-            summary = all_data.groupby(['nickname', 'team'])['points'].sum().reset_index()
-            summary['称号'] = summary['points'].apply(get_brain_rank)
-            st.dataframe(summary.sort_values("points", ascending=False), use_container_width=True, hide_index=True)
+        col_rank1, col_rank2 = st.columns(2)
+        with col_rank1:
+            st.subheader("🏆 DP収支ランキング")
+            if not all_data.empty:
+                rank_df = all_data.groupby(['nickname', 'team'])['points'].sum().reset_index()
+                rank_df['称号'] = rank_df['points'].apply(get_brain_rank)
+                st.dataframe(rank_df.sort_values("points", ascending=False), use_container_width=True, hide_index=True)
+        
+        with col_rank2:
+            st.subheader("📖 自己学習ランキング")
+            if not all_data.empty:
+                learn_rank = all_data.groupby(['nickname', 'team'])['learning_minutes'].sum().reset_index()
+                st.dataframe(learn_rank.sort_values("learning_minutes", ascending=False).rename(columns={'learning_minutes':'合計学習時間(分)'}), 
+                             use_container_width=True, hide_index=True)
 
     with tab3:
-        st.subheader("📈 あなたの成長記録（累積推移）")
         user_data = all_data[all_data['real_name'] == u_real_name].copy()
         if not user_data.empty:
-            # 1. 日付列を日付型に変換してソート
             user_data['date'] = pd.to_datetime(user_data['date'])
             user_data = user_data.sort_values("date")
+
+            st.subheader("📈 ドーパミン投資推移")
+            st.line_chart(user_data.set_index("date")["total_points"])
             
-            # 2. 累積計算
-            user_data['累積DP'] = user_data['points'].cumsum()
-            
-            st.metric("現在の累計ポイント", f"{user_data['points'].sum()} DP")
-            
-            # --- グラフの修正：横軸を日付文字列にして時間を排除 ---
-            # .dt.strftime('%Y-%m-%d') で文字列に変換してからインデックスに設定します
-            chart_data = user_data.copy()
-            chart_data['日付ラベル'] = chart_data['date'].dt.strftime('%m/%d') # '10/24'のような形式
-            chart_data = chart_data.set_index("日付ラベル")[["累積DP"]]
-            
-            # 折れ線グラフを表示
-            st.line_chart(chart_data)
-            
-            # --- 履歴表（前回修正済み） ---
-            st.write("### 履歴")
-            display_df = user_data.copy()
-            display_df['日付'] = display_df['date'].dt.strftime('%Y-%m-%d')
-            
+            st.subheader("📋 収支履歴")
+            history_df = user_data.copy()
+            history_df['日付'] = history_df['date'].dt.strftime('%Y-%m-%d')
             st.dataframe(
-                display_df[['日付', 'points', '累積DP']].rename(columns={'points':'獲得点'}), 
-                hide_index=True,
-                use_container_width=True
+                history_df[['日付', 'points', 'selected_items', 'total_points']].rename(
+                    columns={'points':'収支', 'selected_items':'選択した項目', 'total_points':'累積DP'}
+                ), 
+                hide_index=True, use_container_width=True
             )
+
+            st.divider()
+            st.subheader("📚 自己学習履歴")
+            learn_history = user_data[user_data['learning_minutes'] > 0].copy()
+            if not learn_history.empty:
+                learn_history['日付'] = learn_history['date'].dt.strftime('%Y-%m-%d')
+                st.metric("総学習時間", f"{learn_history['learning_minutes'].sum()} 分")
+                st.dataframe(
+                    learn_history[['日付', 'learning_type', 'learning_minutes']].rename(
+                        columns={'learning_type':'学習項目', 'learning_minutes':'時間(分)'}
+                    ),
+                    hide_index=True, use_container_width=True
+                )
         else:
             st.info("データがまだありません。")
 
 if __name__ == "__main__":
     main()
-
-

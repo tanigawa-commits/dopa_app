@@ -15,21 +15,19 @@ def make_hash(password):
 def load_data():
     try:
         df = conn.read(worksheet="Records", ttl="0m")
-        # 必要な列の存在確認と補完
         expected_cols = ["real_name", "password", "nickname", "team", "date", "points", "total_points", 
                          "entry_date", "selected_items", "learning_type", "learning_minutes"]
         for col in expected_cols:
             if col not in df.columns:
-                df[col] = None
+                df[col] = 0
         return df
     except:
         return pd.DataFrame(columns=["real_name", "password", "nickname", "team", "date", "points", "total_points", 
                                      "entry_date", "selected_items", "learning_type", "learning_minutes"])
 
-# --- 2. リスト・マスタ定義 (PPT準拠) ---
+# --- 2. リスト・マスタ定義 ---
 TEAM_OPTIONS = ["-- 選択してください --", "経営層", "第一システム部", "第二システム部", "第三システム部", "第四システム部", "営業部", "総務部", "新人"]
 
-# 投資型 (加点)
 INVESTMENT_MASTER = {
     "楽器の即興演奏": 9.5, "ライブに行く": 9.3, "スキー・スノーボード": 9.2, "サウナと水風呂": 9.0,
     "海で泳ぐ": 8.8, "作曲・DTM": 8.4, "長期プロジェクトの完遂": 8.2, "追い込む筋トレ": 8.1,
@@ -37,7 +35,6 @@ INVESTMENT_MASTER = {
     "家庭菜園": 5.4, "犬の散歩": 5.0, "十分な睡眠": 2.0, "何もしないでボーッとする": 1.0
 }
 
-# 借金型 (減点) ※特定の項目は削除済み
 DEBT_MASTER = {
     "借金をしてのギャンブル": 10.0, "イヤホンでの爆音視聴": 9.6, "スマホゲームの課金ガチャ": 9.5,
     "アルコール過剰摂取(泥酔)": 9.1, "SNSでバズる体験": 8.8,
@@ -46,7 +43,6 @@ DEBT_MASTER = {
     "TVをダラダラ見続ける": 4.5, "掃除をしない": 3.8, "夜更かし": 2.0
 }
 
-# 選択肢リスト（表示用）
 INV_OPTIONS = [f"{k} (+{v})" for k, v in INVESTMENT_MASTER.items()]
 DEBT_OPTIONS = [f"{k} (-{v})" for k, v in DEBT_MASTER.items()]
 LEARNING_OPTIONS = ["読書", "動画視聴", "対面式学習", "プログラム作成", "ネット記事調査"]
@@ -59,18 +55,15 @@ def get_brain_rank(points):
 
 # --- 3. メイン処理 ---
 def main():
-    # 画面タイトル・サブタイトル
     st.title("🧠 脳内ドーパミン収支報告")
     st.subheader("幸せホルモンを育てよう！")
     
-    # URLパラメータの取得
     saved_real_name = st.query_params.get("rn", "")
     saved_nickname = st.query_params.get("nn", "")
     saved_team = st.query_params.get("t", TEAM_OPTIONS[0])
     
     all_data = load_data()
 
-    # サイドバー：ログイン
     with st.sidebar:
         st.header("🔑 ユーザー認証")
         u_real_name = st.text_input("氏名（実名）", value=saved_real_name, key="login_rn")
@@ -97,43 +90,39 @@ def main():
 
     with tab1:
         st.write(f"### 投資と借金のバランスを整えましょう、{u_nickname} さん")
-        target_date = st.date_input("対象日", value=date.today())
+        
+        # --- 対象日の選択制限（本日含め3日間）とラベル変更 ---
+        target_date = st.date_input(
+            "対象日（２日前まで遡って登録、修正が出来ます）", 
+            value=date.today(),
+            min_value=date.today() - timedelta(days=2),
+            max_value=date.today()
+        )
         
         col1, col2, col3 = st.columns(3)
         with col1:
             st.markdown("#### 🟢 投資型 (+)")
-            # placeholderを使用して「Choose options」を「-- 未選択 --」に変更
-            inv_sel_raw = st.multiselect(
-                "未来を創る行動", 
-                INV_OPTIONS, 
-                placeholder="-- 未選択 --"
-            )
+            inv_sel_raw = st.multiselect("未来を創る行動", INV_OPTIONS, placeholder="-- 未選択 --")
         with col2:
             st.markdown("#### 🔴 借金型 (-)")
-            # placeholderを使用して「Choose options」を「-- 未選択 --」に変更
-            debt_sel_raw = st.multiselect(
-                "エネルギーの前借り", 
-                DEBT_OPTIONS, 
-                placeholder="-- 未選択 --"
-            )
+            debt_sel_raw = st.multiselect("エネルギーの前借り", DEBT_OPTIONS, placeholder="-- 未選択 --")
         with col3:
             st.markdown("#### 📚 自己学習")
             l_type = st.selectbox("学習項目", ["-- 未選択 --"] + LEARNING_OPTIONS)
             l_min = st.selectbox("学習時間 (分)", options=list(range(0, 601, 10)), index=0)
 
         if st.button("この内容で決算する"):
-            # 選択された表示名からキーを逆引き
             inv_keys = [s.split(" (+")[0] for s in inv_sel_raw]
             debt_keys = [s.split(" (-")[0] for s in debt_sel_raw]
             
-            # 収支計算
             day_points = sum(INVESTMENT_MASTER[k] for k in inv_keys) - sum(DEBT_MASTER[k] for k in debt_keys)
             selected_items_str = ", ".join(inv_keys + debt_keys)
             
-            # 累積ポイントの計算
             user_past_data = all_data[all_data['real_name'] == u_real_name]
-            past_total = user_past_data['points'].sum()
-            new_total = past_total + day_points
+            
+            # 累積ポイントを正確に計算するために、今回登録する日以外の合計を取得
+            past_points_total = all_data[(all_data['real_name'] == u_real_name) & (all_data['date'] != str(target_date))]['points'].sum()
+            new_total = past_points_total + day_points
             
             hashed_input_pass = make_hash(u_pass)
             new_row = pd.DataFrame([{
@@ -145,14 +134,14 @@ def main():
                 "learning_minutes": l_min
             }])
             
-            # データの統合（上書き対応）
+            # 既存の同日データを削除して連結（＝DB内のデータ修正/反映）
             updated_df = pd.concat([
                 all_data[~((all_data['real_name'] == u_real_name) & (all_data['date'] == str(target_date)))], 
                 new_row
             ]).reset_index(drop=True)
             
-            # スプレッドシートへ書き込み
             conn.update(worksheet="Records", data=updated_df)
+            
             st.balloons()
             st.success(f"記録しました！ 今日のDP収支: {day_points:+.1f} / 学習時間: {l_min}分")
             time.sleep(3)
@@ -179,10 +168,15 @@ def main():
         if not user_data.empty:
             user_data['date'] = pd.to_datetime(user_data['date'])
             user_data = user_data.sort_values("date")
-
-            st.subheader("📈 ドーパミン投資推移")
+            
+            st.subheader("📈 ドーパミン投資推移 (累積)")
             st.line_chart(user_data.set_index("date")["total_points"])
             
+            st.subheader("📖 学習時間の推移 (累積分)")
+            user_data['累積学習時間'] = user_data['learning_minutes'].cumsum()
+            st.line_chart(user_data.set_index("date")["累積学習時間"])
+            
+            st.divider()
             st.subheader("📋 収支履歴")
             history_df = user_data.copy()
             history_df['日付'] = history_df['date'].dt.strftime('%Y-%m-%d')

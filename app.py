@@ -15,7 +15,6 @@ def make_hash(password):
 def load_data():
     try:
         df = conn.read(worksheet="Records", ttl="0m")
-        # 自己学習関連の列(learning_type, learning_minutes)を削除
         expected_cols = ["real_name", "password", "nickname", "team", "date", "points", "total_points", 
                          "entry_date", "selected_items"]
         for col in expected_cols:
@@ -27,8 +26,10 @@ def load_data():
                                      "entry_date", "selected_items"])
 
 # --- 2. リスト・マスタ定義 ---
+#  幸福の三段ピラミッド構造に基づき、セロトニン・オキシトシン（健康・繋がり）を土台とし、ドーパミン（成功）を積み上げます。
 TEAM_OPTIONS = ["-- 選択してください --", "経営層", "第一システム部", "第二システム部", "第三システム部", "第四システム部", "営業部", "総務部", "新人"]
 
+# 投資型：自己研鑽や創造的活動を通じ努力の後に報酬を得る領域 
 INVESTMENT_MASTER = {
     "楽器の即興演奏": 9.5, "ライブに行く": 9.3, "スキー・スノーボード": 9.2, "サウナと水風呂": 9.0,
     "海で泳ぐ": 8.8, "作曲・DTM": 8.4, "長期プロジェクトの完遂": 8.2, "追い込む筋トレ": 8.1,
@@ -36,6 +37,7 @@ INVESTMENT_MASTER = {
     "家庭菜園": 5.4, "犬の散歩": 5.0, "十分な睡眠": 2.0, "何もしないでボーッとする": 1.0
 }
 
+# 借金型：即座に強い快楽を得るが、エネルギーの前借りとなる領域 
 DEBT_MASTER = {
     "借金をしてのギャンブル": 10.0, "イヤホンでの爆音視聴": 9.6, "スマホゲームの課金ガチャ": 9.5,
     "アルコール過剰摂取(泥酔)": 9.1, "SNSでバズる体験": 8.8,
@@ -43,9 +45,6 @@ DEBT_MASTER = {
     "SNSのいいねに一喜一憂": 6.5, "陰口やゴシップで盛り上がる": 5.7,
     "TVをダラダラ見続ける": 4.5, "掃除をしない": 3.8, "夜更かし": 2.0
 }
-
-INV_OPTIONS = [f"{k} (+{v})" for k, v in INVESTMENT_MASTER.items()]
-DEBT_OPTIONS = [f"{k} (-{v})" for k, v in DEBT_MASTER.items()]
 
 def get_brain_rank(points):
     if points >= 500: return "プラチナ脳（Flow Master）"
@@ -63,6 +62,12 @@ def main():
     saved_team = st.query_params.get("t", TEAM_OPTIONS[0])
     
     all_data = load_data()
+
+    # セッション状態の初期化
+    if 'selected_inv' not in st.session_state:
+        st.session_state.selected_inv = set()
+    if 'selected_debt' not in st.session_state:
+        st.session_state.selected_debt = set()
 
     with st.sidebar:
         st.header("🔑 ユーザー認証")
@@ -90,6 +95,7 @@ def main():
 
     with tab1:
         st.write(f"### 投資と借金のバランスを整えましょう、{u_nickname} さん")
+        st.caption("ボタンを押して「笑顔 😊」になった項目が本日のスコアになります。")
         
         target_date = st.date_input(
             "対象日（２日前まで遡って登録、修正が出来ます）", 
@@ -98,20 +104,43 @@ def main():
             max_value=date.today()
         )
         
-        col1, col2 = st.columns(2) # 3列から2列に変更
-        with col1:
-            st.markdown("#### 🟢 投資型 (+)")
-            inv_sel_raw = st.multiselect("未来を創る行動", INV_OPTIONS, placeholder="-- 未選択 --")
-        with col2:
-            st.markdown("#### 🔴 借金型 (-)")
-            debt_sel_raw = st.multiselect("エネルギーの前借り", DEBT_OPTIONS, placeholder="-- 未選択 --")
+        # 投資型のグリッド表示
+        st.markdown("#### 🟢 投資型 (+) - 未来を創る投資")
+        cols_inv = st.columns(3) # 3列に並べる
+        for i, (item, val) in enumerate(INVESTMENT_MASTER.items()):
+            is_active = item in st.session_state.selected_inv
+            label = f"😊 {item}" if is_active else f"😐 {item}"
+            if cols_inv[i % 3].button(label, key=f"inv_{item}", use_container_width=True):
+                if is_active:
+                    st.session_state.selected_inv.remove(item)
+                else:
+                    st.session_state.selected_inv.add(item)
+                st.rerun()
 
-        if st.button("この内容で決算する"):
-            inv_keys = [s.split(" (+")[0] for s in inv_sel_raw]
-            debt_keys = [s.split(" (-")[0] for s in debt_sel_raw]
-            
-            day_points = sum(INVESTMENT_MASTER[k] for k in inv_keys) - sum(DEBT_MASTER[k] for k in debt_keys)
-            selected_items_str = ", ".join(inv_keys + debt_keys)
+        st.divider()
+
+        # 借金型のグリッド表示
+        st.markdown("#### 🔴 借金型 (-) - エネルギーの前借り")
+        cols_debt = st.columns(3)
+        for i, (item, val) in enumerate(DEBT_MASTER.items()):
+            is_active = item in st.session_state.selected_debt
+            label = f"😊 {item}" if is_active else f"😐 {item}"
+            if cols_debt[i % 3].button(label, key=f"debt_{item}", use_container_width=True):
+                if is_active:
+                    st.session_state.selected_debt.remove(item)
+                else:
+                    st.session_state.selected_debt.add(item)
+                st.rerun()
+
+        # スコア計算
+        day_points = sum(INVESTMENT_MASTER[k] for k in st.session_state.selected_inv) - \
+                     sum(DEBT_MASTER[k] for k in st.session_state.selected_debt)
+        
+        st.divider()
+        st.metric("暫定スコア", f"{day_points:+.1f} DP")
+
+        if st.button("この内容で決算する", type="primary"):
+            selected_items_str = ", ".join(list(st.session_state.selected_inv) + list(st.session_state.selected_debt))
             
             # 累積ポイントの計算
             past_points_total = all_data[(all_data['real_name'] == u_real_name) & (all_data['date'] != str(target_date))]['points'].sum()
@@ -134,6 +163,11 @@ def main():
             
             st.balloons()
             st.success(f"記録しました！ 今日のDP収支: {day_points:+.1f}")
+            
+            # 保存後は選択をクリア
+            st.session_state.selected_inv = set()
+            st.session_state.selected_debt = set()
+            
             time.sleep(3)
             st.rerun()
 

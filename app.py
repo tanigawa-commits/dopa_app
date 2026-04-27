@@ -9,45 +9,42 @@ import time
 st.set_page_config(page_title="Dopa-Balance Pro", layout="wide")
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-# カスタムCSS：顔文字のサイズは大きく、文字はその半分に設定
+# カスタムCSS：顔文字を大きく、テキストをその半分に設定
 st.markdown("""
     <style>
-    /* 1. メインエリアの投資・借金ボタン設定 */
+    /* メインエリアの投資・借金ボタン設定 */
     [data-testid="stMain"] div.stButton > button {
-        height: 80px !important;    /* ボタンの囲み（四角）のサイズを適切に維持 */
+        height: 80px !important;    /* ボタンの囲みのサイズ */
         border-radius: 12px !important;
-        padding: 0px 20px !important;
-        display: flex;
-        align-items: center;
-        justify-content: center;
+        padding: 0px 15px !important;
     }
     
-    /* ボタン内のテキスト：最初の1文字（顔文字）を巨大に、以降の文字を半分に */
-    /* 注: CSSの制限上、ひとつのタグ内の文字サイズを分けるため、疑似的なサイズ調整を行います */
+    /* ボタン内のテキスト全体の基本サイズ（項目名のサイズ：顔文字の半分に設定） */
     [data-testid="stMain"] div.stButton > button p {
-        font-size: 40px !important;  /* 顔文字のサイズ（現状を維持） */
+        font-size: 20px !important;  /* 項目名のフォントサイズ */
         font-weight: bold;
-        line-height: 1.0 !important;
-        display: flex;
-        align-items: center;
+        line-height: 1.5 !important;
+        display: block !important;
     }
 
-    /* 文字部分だけを小さく見せるためのハック：フォントの種類やスケール感で調整 */
-    /* 実際にはボタンラベル全体に適用されるため、文字とのバランスを整えます */
-    [data-testid="stMain"] div.stButton > button p {
-        font-size: 40px !important; /* 顔文字用 */
+    /* ボタン内の最初の1文字（顔文字）だけを2倍のサイズにする */
+    [data-testid="stMain"] div.stButton > button p::first-letter {
+        font-size: 40px !important;  /* 顔文字のフォントサイズ（現状を維持） */
     }
 
-    /* 2. サイドバーの「認証」ボタンは以前の標準サイズのまま維持 */
+    /* サイドバーの「認証」ボタンや文字サイズは以前の標準サイズを維持 */
     [data-testid="stSidebar"] div.stButton > button {
         height: auto !important;
         padding: 0.25rem 0.75rem !important;
     }
     [data-testid="stSidebar"] div.stButton > button p {
-        font-size: 16px !important; /* 標準サイズ */
+        font-size: 16px !important; 
+    }
+    [data-testid="stSidebar"] div.stButton > button p::first-letter {
+        font-size: 16px !important; /* サイドバーでは拡大しない */
     }
     
-    /* ボタン押下時のエフェクト */
+    /* ボタン押下時の視覚効果 */
     div.stButton > button:active {
         transform: scale(0.98);
     }
@@ -60,6 +57,7 @@ def make_hash(password):
 def load_data():
     try:
         df = conn.read(worksheet="Records", ttl="0m")
+        # 必要な列の存在確認と初期化
         expected_cols = ["real_name", "password", "nickname", "team", "date", "points", "total_points", 
                          "entry_date", "selected_items", "learning_type", "learning_minutes"]
         for col in expected_cols:
@@ -73,21 +71,41 @@ def load_data():
 # --- 2. リスト・マスタ定義（脳科学理論に基づく） ---
 TEAM_OPTIONS = ["-- 選択してください --", "経営層", "第一システム部", "第二システム部", "第三システム部", "第四システム部", "営業部", "総務部", "新人"]
 
-# 投資型：フロー状態に入りやすく、脳のベースラインを向上させる領域 [cite: 63]
+# 投資型：自己効力感を構築し、長期的なメンタルを向上させる領域 
 INVESTMENT_MASTER = {
-    "楽器の即興演奏": 9.5, "ライブに行く": 9.3, "スキー・スノーボード": 9.2, "サウナと水風呂": 9.0, [cite: 46, 48, 50, 52]
-    "海で泳ぐ": 8.8, "作曲・DTM": 8.4, "長期プロジェクトの完遂": 8.2, "追い込む筋トレ": 8.1, [cite: 54, 56, 58, 60]
-    "小説を読む": 8.0, "キャンプ": 7.1, "映画鑑賞": 6.7, "部屋の徹底的な断捨離": 6.0, [cite: 62, 70, 76, 80]
-    "家庭菜園": 5.4, "犬の散歩": 5.0, "十分な睡眠": 2.0, "何もしないでボーッとする": 1.0 [cite: 82, 88, 126, 130]
+    "楽器の即興演奏": 9.5, # [cite: 45, 46]
+    "ライブに行く": 9.3,   # [cite: 47, 48]
+    "スキー・スノーボード": 9.2, # [cite: 49, 50]
+    "サウナと水風呂": 9.0,   # [cite: 51, 52]
+    "海で泳ぐ": 8.8,         # [cite: 53, 54]
+    "作曲・DTM": 8.4,       # [cite: 55, 56]
+    "長期プロジェクトの完遂": 8.2, # [cite: 57, 58]
+    "追い込む筋トレ": 8.1,   # [cite: 59, 60]
+    "小説を読む": 8.0,       # [cite: 61, 62]
+    "キャンプ": 7.1,         # [cite: 69, 70]
+    "映画鑑賞": 6.7,         # [cite: 75, 76]
+    "部屋の徹底的な断捨離": 6.0, # [cite: 79, 80]
+    "家庭菜園": 5.4,         # [cite: 81, 82]
+    "犬の散歩": 5.0,         # [cite: 87, 88]
+    "十分な睡眠": 2.0,       # [cite: 125, 126]
+    "何もしないでボーッとする": 1.0 # [cite: 129, 130]
 }
 
-# 借金型：強烈な刺激と引き換えに活力を激しく前借りする領域 [cite: 165]
+# 借金型：即座に強い快楽を得るが、活力を前借りする領域 
 DEBT_MASTER = {
-    "借金をしてのギャンブル": 10.0, "イヤホンでの爆音視聴": 9.6, "スマホゲームの課金ガチャ": 9.5, [cite: 136, 144, 146]
-    "アルコール過剰摂取(泥酔)": 9.1, "SNSでバズる体験": 8.8, [cite: 154, 158]
-    "YouTubeショート・TikTok": 8.5, "深夜のジャンクフード・ドカ食い": 8.0, "エナジードリンクの常飲": 7.8, [cite: 160, 164, 168]
-    "SNSのいいねに一喜一憂": 6.5, "陰口やゴシップで盛り上がる": 5.7, [cite: 174, 180]
-    "TVをダラダラ見続ける": 4.5, "掃除をしない": 3.8, "夜更かし": 2.0 [cite: 184, 188, 198]
+    "借金をしてのギャンブル": 10.0, # [cite: 135, 136]
+    "イヤホンでの爆音視聴": 9.6,   # [cite: 143, 144]
+    "スマホゲームの課金ガチャ": 9.5, # [cite: 145, 146]
+    "アルコール過剰摂取(泥酔)": 9.1, # [cite: 153, 154]
+    "SNSでバズる体験": 8.8,         # [cite: 157, 158]
+    "YouTubeショート・TikTok": 8.5, # [cite: 159, 160]
+    "深夜のジャンクフード・ドカ食い": 8.0, # [cite: 163, 164]
+    "エナジードリンクの常飲": 7.8,   # [cite: 167, 168]
+    "SNSのいいねに一喜一憂": 6.5,   # [cite: 173, 174]
+    "陰口やゴシップで盛り上がる": 5.7, # [cite: 179, 180]
+    "TVをダラダラ見続ける": 4.5,     # [cite: 183, 184]
+    "掃除をしない": 3.8,             # [cite: 187, 188]
+    "夜更かし": 2.0                 # [cite: 197, 198]
 }
 
 LEARNING_OPTIONS = ["読書", "動画視聴", "対面式学習", "プログラム作成", "ネット記事調査"]
@@ -137,7 +155,6 @@ def main():
     tab1, tab2, tab3 = st.tabs(["📊 今日の記録", "🏆 ランキング", "📈 マイデータ"])
 
     with tab1:
-        # 戦略的 8:2 マネジメントに基づき、未来を創る「投資」を優先します [cite: 238, 239]
         st.write(f"### 投資と借金のバランスを整えましょう、{u_nickname} さん")
         
         target_date = st.date_input(
@@ -151,8 +168,9 @@ def main():
         cols_inv = st.columns(2)
         for i, (item, val) in enumerate(INVESTMENT_MASTER.items()):
             active = item in st.session_state.selected_inv
-            # 顔文字と文字を結合。CSSでフォントサイズのバランスを調整
-            if cols_inv[i % 2].button(f"{'😊' if active else '😐'} {item}", key=f"inv_{item}", use_container_width=True):
+            # 顔文字を先頭に配置（CSSの::first-letterを適用するため）
+            label = f"{'😊' if active else '😐'} {item}"
+            if cols_inv[i % 2].button(label, key=f"inv_{item}", use_container_width=True):
                 if active: st.session_state.selected_inv.remove(item)
                 else: st.session_state.selected_inv.add(item)
                 st.rerun()
@@ -162,7 +180,8 @@ def main():
         cols_debt = st.columns(2)
         for i, (item, val) in enumerate(DEBT_MASTER.items()):
             active = item in st.session_state.selected_debt
-            if cols_debt[i % 2].button(f"{'😊' if active else '😐'} {item}", key=f"debt_{item}", use_container_width=True):
+            label = f"{'😊' if active else '😐'} {item}"
+            if cols_debt[i % 2].button(label, key=f"debt_{item}", use_container_width=True):
                 if active: st.session_state.selected_debt.remove(item)
                 else: st.session_state.selected_debt.add(item)
                 st.rerun()
@@ -181,12 +200,12 @@ def main():
 
         if st.button("この内容で決算する", type="primary"):
             selected_items_str = ", ".join(list(st.session_state.selected_inv) + list(st.session_state.selected_debt))
-            past_points_total = all_data[(all_data['real_name'] == u_real_name) & (all_data['date'] != str(target_date))]['points'].sum()
+            past_total = all_data[(all_data['real_name'] == u_real_name) & (all_data['date'] != str(target_date))]['points'].sum()
             
             new_row = pd.DataFrame([{
                 "real_name": u_real_name, "password": make_hash(u_pass), "nickname": u_nickname, 
                 "team": t_name, "date": str(target_date), "points": round(day_points, 1), 
-                "total_points": round(past_points_total + day_points, 1), "entry_date": str(date.today()),
+                "total_points": round(past_total + day_points, 1), "entry_date": str(date.today()),
                 "selected_items": selected_items_str, 
                 "learning_type": l_type if l_type != "-- 未選択 --" else None,
                 "learning_minutes": l_min

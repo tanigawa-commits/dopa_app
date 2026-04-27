@@ -9,23 +9,28 @@ import time
 st.set_page_config(page_title="Dopa-Balance Pro", layout="wide")
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-# カスタムCSS：顔文字を圧倒的に大きく（64px）し、ボタンの高さを確保
+# カスタムCSS：顔文字を大きくし、ボタンの高さを調整
 st.markdown("""
     <style>
+    /* ボタン自体の設定 */
     div.stButton > button {
-        font-size: 64px !important; 
-        height: 180px !important;   
-        border-radius: 20px !important;
-        line-height: 1.2 !important;
+        height: 100px !important;   /* ボタンの高さ（囲みのサイズ）を調整 */
+        border-radius: 15px !important;
         transition: transform 0.2s;
+        padding: 0 !important;
     }
     div.stButton > button:active {
         transform: scale(0.95);
     }
+    /* ボタン内のテキスト（顔文字を含む）の設定 */
     div.stButton > button p {
-        font-size: 18px !important;
+        font-size: 45px !important; /* 顔文字のサイズを約2倍以上に拡大 */
         font-weight: bold;
+        line-height: 1.1 !important;
+        margin: 0 !important;
     }
+    /* 項目名が大きくなりすぎる場合は、ここで個別に調整も可能ですが、
+       基本的にはpタグのサイズが顔文字のサイズに直結します */
     </style>
     """, unsafe_allow_html=True)
 
@@ -125,7 +130,8 @@ def main():
         cols_inv = st.columns(2) 
         for i, (item, val) in enumerate(INVESTMENT_MASTER.items()):
             active = item in st.session_state.selected_inv
-            if cols_inv[i % 2].button(f"{'😊' if active else '😐'}\n{item}", key=f"inv_{item}", use_container_width=True):
+            # 顔文字とテキストを表示
+            if cols_inv[i % 2].button(f"{'😊' if active else '😐'} {item}", key=f"inv_{item}", use_container_width=True):
                 if active: st.session_state.selected_inv.remove(item)
                 else: st.session_state.selected_inv.add(item)
                 st.rerun()
@@ -135,7 +141,7 @@ def main():
         cols_debt = st.columns(2)
         for i, (item, val) in enumerate(DEBT_MASTER.items()):
             active = item in st.session_state.selected_debt
-            if cols_debt[i % 2].button(f"{'😊' if active else '😐'}\n{item}", key=f"debt_{item}", use_container_width=True):
+            if cols_debt[i % 2].button(f"{'😊' if active else '😐'} {item}", key=f"debt_{item}", use_container_width=True):
                 if active: st.session_state.selected_debt.remove(item)
                 else: st.session_state.selected_debt.add(item)
                 st.rerun()

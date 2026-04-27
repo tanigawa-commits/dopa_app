@@ -9,6 +9,17 @@ import time
 st.set_page_config(page_title="Dopa-Balance Pro", layout="wide")
 conn = st.connection("gsheets", type=GSheetsConnection)
 
+# カスタムCSS：ボタン内の顔文字と文字を大きくする
+st.markdown("""
+    <style>
+    div.stButton > button {
+        font-size: 24px !important;
+        height: 3em !important;
+        border-radius: 10px !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
 def make_hash(password):
     return hashlib.sha256(str.encode(password)).hexdigest()
 
@@ -16,35 +27,36 @@ def load_data():
     try:
         df = conn.read(worksheet="Records", ttl="0m")
         expected_cols = ["real_name", "password", "nickname", "team", "date", "points", "total_points", 
-                         "entry_date", "selected_items"]
+                         "entry_date", "selected_items", "learning_type", "learning_minutes"]
         for col in expected_cols:
             if col not in df.columns:
                 df[col] = 0
         return df
     except:
         return pd.DataFrame(columns=["real_name", "password", "nickname", "team", "date", "points", "total_points", 
-                                     "entry_date", "selected_items"])
+                                     "entry_date", "selected_items", "learning_type", "learning_minutes"])
 
-# --- 2. リスト・マスタ定義 ---
-#  幸福の三段ピラミッド構造に基づき、セロトニン・オキシトシン（健康・繋がり）を土台とし、ドーパミン（成功）を積み上げます。
+# --- 2. リスト・マスタ定義 [cite: 1, 227] ---
 TEAM_OPTIONS = ["-- 選択してください --", "経営層", "第一システム部", "第二システム部", "第三システム部", "第四システム部", "営業部", "総務部", "新人"]
 
-# 投資型：自己研鑽や創造的活動を通じ努力の後に報酬を得る領域 
+# 投資型：自己研鑽や創造的活動 [cite: 28, 29]
 INVESTMENT_MASTER = {
-    "楽器の即興演奏": 9.5, "ライブに行く": 9.3, "スキー・スノーボード": 9.2, "サウナと水風呂": 9.0,
-    "海で泳ぐ": 8.8, "作曲・DTM": 8.4, "長期プロジェクトの完遂": 8.2, "追い込む筋トレ": 8.1,
-    "小説を読む": 8.0, "キャンプ": 7.1, "映画鑑賞": 6.7, "部屋の徹底的な断捨離": 6.0,
-    "家庭菜園": 5.4, "犬の散歩": 5.0, "十分な睡眠": 2.0, "何もしないでボーッとする": 1.0
+    "楽器の即興演奏": 9.5, "ライブに行く": 9.3, "スキー・スノーボード": 9.2, "サウナと水風呂": 9.0, [cite: 45-52]
+    "海で泳ぐ": 8.8, "作曲・DTM": 8.4, "長期プロジェクトの完遂": 8.2, "追い込む筋トレ": 8.1, [cite: 53-60]
+    "小説を読む": 8.0, "キャンプ": 7.1, "映画鑑賞": 6.7, "部屋の徹底的な断捨離": 6.0, [cite: 61-80]
+    "家庭菜園": 5.4, "犬の散歩": 5.0, "十分な睡眠": 2.0, "何もしないでボーッとする": 1.0 [cite: 81-130]
 }
 
-# 借金型：即座に強い快楽を得るが、エネルギーの前借りとなる領域 
+# 借金型：即座に強い快楽を得る「エネルギーの前借り」 [cite: 30, 31]
 DEBT_MASTER = {
-    "借金をしてのギャンブル": 10.0, "イヤホンでの爆音視聴": 9.6, "スマホゲームの課金ガチャ": 9.5,
-    "アルコール過剰摂取(泥酔)": 9.1, "SNSでバズる体験": 8.8,
-    "YouTubeショート・TikTok": 8.5, "深夜のジャンクフード・ドカ食い": 8.0, "エナジードリンクの常飲": 7.8,
-    "SNSのいいねに一喜一憂": 6.5, "陰口やゴシップで盛り上がる": 5.7,
-    "TVをダラダラ見続ける": 4.5, "掃除をしない": 3.8, "夜更かし": 2.0
+    "借金をしてのギャンブル": 10.0, "イヤホンでの爆音視聴": 9.6, "スマホゲームの課金ガチャ": 9.5, [cite: 135-146]
+    "アルコール過剰摂取(泥酔)": 9.1, "SNSでバズる体験": 8.8, [cite: 153-158]
+    "YouTubeショート・TikTok": 8.5, "深夜のジャンクフード・ドカ食い": 8.0, "エナジードリンクの常飲": 7.8, [cite: 159-168]
+    "SNSのいいねに一喜一憂": 6.5, "陰口やゴシップで盛り上がる": 5.7, [cite: 173-180]
+    "TVをダラダラ見続ける": 4.5, "掃除をしない": 3.8, "夜更かし": 2.0 [cite: 183-198]
 }
+
+LEARNING_OPTIONS = ["読書", "動画視聴", "対面式学習", "プログラム作成", "ネット記事調査"]
 
 def get_brain_rank(points):
     if points >= 500: return "プラチナ脳（Flow Master）"
@@ -63,11 +75,8 @@ def main():
     
     all_data = load_data()
 
-    # セッション状態の初期化
-    if 'selected_inv' not in st.session_state:
-        st.session_state.selected_inv = set()
-    if 'selected_debt' not in st.session_state:
-        st.session_state.selected_debt = set()
+    if 'selected_inv' not in st.session_state: st.session_state.selected_inv = set()
+    if 'selected_debt' not in st.session_state: st.session_state.selected_debt = set()
 
     with st.sidebar:
         st.header("🔑 ユーザー認証")
@@ -95,7 +104,6 @@ def main():
 
     with tab1:
         st.write(f"### 投資と借金のバランスを整えましょう、{u_nickname} さん")
-        st.caption("ボタンを押して「笑顔 😊」になった項目が本日のスコアになります。")
         
         target_date = st.date_input(
             "対象日（２日前まで遡って登録、修正が出来ます）", 
@@ -104,99 +112,84 @@ def main():
             max_value=date.today()
         )
         
-        # 投資型のグリッド表示
-        st.markdown("#### 🟢 投資型 (+) - 未来を創る投資")
-        cols_inv = st.columns(3) # 3列に並べる
+        st.markdown("#### 🟢 投資型 (+) - 未来を創る行動")
+        cols_inv = st.columns(3)
         for i, (item, val) in enumerate(INVESTMENT_MASTER.items()):
-            is_active = item in st.session_state.selected_inv
-            label = f"😊 {item}" if is_active else f"😐 {item}"
-            if cols_inv[i % 3].button(label, key=f"inv_{item}", use_container_width=True):
-                if is_active:
-                    st.session_state.selected_inv.remove(item)
-                else:
-                    st.session_state.selected_inv.add(item)
+            active = item in st.session_state.selected_inv
+            if cols_inv[i % 3].button(f"{'😊' if active else '😐'} {item}", key=f"inv_{item}", use_container_width=True):
+                st.session_state.selected_inv.remove(item) if active else st.session_state.selected_inv.add(item)
                 st.rerun()
 
         st.divider()
-
-        # 借金型のグリッド表示
         st.markdown("#### 🔴 借金型 (-) - エネルギーの前借り")
         cols_debt = st.columns(3)
         for i, (item, val) in enumerate(DEBT_MASTER.items()):
-            is_active = item in st.session_state.selected_debt
-            label = f"😊 {item}" if is_active else f"😐 {item}"
-            if cols_debt[i % 3].button(label, key=f"debt_{item}", use_container_width=True):
-                if is_active:
-                    st.session_state.selected_debt.remove(item)
-                else:
-                    st.session_state.selected_debt.add(item)
+            active = item in st.session_state.selected_debt
+            if cols_debt[i % 3].button(f"{'😊' if active else '😐'} {item}", key=f"debt_{item}", use_container_width=True):
+                st.session_state.selected_debt.remove(item) if active else st.session_state.selected_debt.add(item)
                 st.rerun()
 
-        # スコア計算
+        st.divider()
+        col_l1, col_l2 = st.columns(2)
+        with col_l1:
+            l_type = st.selectbox("📚 自己学習項目", ["-- 未選択 --"] + LEARNING_OPTIONS)
+        with col_l2:
+            l_min = st.selectbox("⏱️ 学習時間 (分)", options=list(range(0, 601, 10)), index=0)
+
         day_points = sum(INVESTMENT_MASTER[k] for k in st.session_state.selected_inv) - \
                      sum(DEBT_MASTER[k] for k in st.session_state.selected_debt)
         
-        st.divider()
         st.metric("暫定スコア", f"{day_points:+.1f} DP")
 
         if st.button("この内容で決算する", type="primary"):
             selected_items_str = ", ".join(list(st.session_state.selected_inv) + list(st.session_state.selected_debt))
+            past_points = all_data[(all_data['real_name'] == u_real_name) & (all_data['date'] != str(target_date))]['points'].sum()
             
-            # 累積ポイントの計算
-            past_points_total = all_data[(all_data['real_name'] == u_real_name) & (all_data['date'] != str(target_date))]['points'].sum()
-            new_total = past_points_total + day_points
-            
-            hashed_input_pass = make_hash(u_pass)
             new_row = pd.DataFrame([{
-                "real_name": u_real_name, "password": hashed_input_pass, "nickname": u_nickname, 
+                "real_name": u_real_name, "password": make_hash(u_pass), "nickname": u_nickname, 
                 "team": t_name, "date": str(target_date), "points": round(day_points, 1), 
-                "total_points": round(new_total, 1), "entry_date": str(date.today()),
-                "selected_items": selected_items_str
+                "total_points": round(past_points + day_points, 1), "entry_date": str(date.today()),
+                "selected_items": selected_items_str, "learning_type": l_type if l_type != "-- 未選択 --" else None,
+                "learning_minutes": l_min
             }])
             
-            updated_df = pd.concat([
-                all_data[~((all_data['real_name'] == u_real_name) & (all_data['date'] == str(target_date)))], 
-                new_row
-            ]).reset_index(drop=True)
-            
+            updated_df = pd.concat([all_data[~((all_data['real_name'] == u_real_name) & (all_data['date'] == str(target_date)))], new_row]).reset_index(drop=True)
             conn.update(worksheet="Records", data=updated_df)
             
             st.balloons()
-            st.success(f"記録しました！ 今日のDP収支: {day_points:+.1f}")
-            
-            # 保存後は選択をクリア
-            st.session_state.selected_inv = set()
-            st.session_state.selected_debt = set()
-            
+            st.success(f"記録しました！ 今日の収支: {day_points:+.1f} / 学習: {l_min}分")
+            st.session_state.selected_inv, st.session_state.selected_debt = set(), set()
             time.sleep(3)
             st.rerun()
 
     with tab2:
-        st.subheader("🏆 DP収支ランキング")
+        col_r1, col_r2 = st.columns(2)
         if not all_data.empty:
-            rank_df = all_data.groupby(['nickname', 'team'])['points'].sum().reset_index()
-            rank_df['称号'] = rank_df['points'].apply(get_brain_rank)
-            st.dataframe(rank_df.sort_values("points", ascending=False), use_container_width=True, hide_index=True)
+            with col_r1:
+                st.subheader("🏆 DP収支ランキング")
+                rdf = all_data.groupby(['nickname', 'team'])['points'].sum().reset_index()
+                rdf['称号'] = rdf['points'].apply(get_brain_rank)
+                st.dataframe(rdf.sort_values("points", ascending=False), use_container_width=True, hide_index=True)
+            with col_r2:
+                st.subheader("📖 自己学習ランキング")
+                ldf = all_data.groupby(['nickname', 'team'])['learning_minutes'].sum().reset_index()
+                st.dataframe(ldf.sort_values("learning_minutes", ascending=False), use_container_width=True, hide_index=True)
 
     with tab3:
-        user_data = all_data[all_data['real_name'] == u_real_name].copy()
-        if not user_data.empty:
-            user_data['date'] = pd.to_datetime(user_data['date'])
-            user_data = user_data.sort_values("date")
-            
+        udata = all_data[all_data['real_name'] == u_real_name].copy()
+        if not udata.empty:
+            udata['date'] = pd.to_datetime(udata['date'])
+            udata = udata.sort_values("date")
             st.subheader("📈 ドーパミン投資推移 (累積)")
-            st.line_chart(user_data.set_index("date")["total_points"])
-            
+            st.line_chart(udata.set_index("date")["total_points"])
+            st.subheader("📖 学習時間の推移 (累積分)")
+            udata['累積学習'] = udata['learning_minutes'].cumsum()
+            st.line_chart(udata.set_index("date")["累積学習"])
             st.divider()
-            st.subheader("📋 収支履歴")
-            history_df = user_data.copy()
-            history_df['日付'] = history_df['date'].dt.strftime('%Y-%m-%d')
-            st.dataframe(
-                history_df[['日付', 'points', 'selected_items', 'total_points']].rename(
-                    columns={'points':'収支', 'selected_items':'選択項目', 'total_points':'累積DP'}
-                ), 
-                hide_index=True, use_container_width=True
-            )
+            st.subheader("📋 履歴詳細")
+            h_df = udata.copy()
+            h_df['日付'] = h_df['date'].dt.strftime('%Y-%m-%d')
+            st.dataframe(h_df[['日付', 'points', 'selected_items', 'learning_minutes']].rename(columns={'points':'収支','learning_minutes':'学習(分)'}), hide_index=True, use_container_width=True)
         else:
             st.info("データがまだありません。")
 

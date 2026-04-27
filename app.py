@@ -9,30 +9,29 @@ import time
 st.set_page_config(page_title="Dopa-Balance Pro", layout="wide")
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-# カスタムCSS：顔文字を大きく（44px）、項目名をその半分（22px）に設定
-# サイドバーの認証ボタンなどの標準サイズは維持
+# カスタムCSS：指定の比率で各サイズをコンパクトに調整
 st.markdown("""
     <style>
-    /* 1. メインエリアの投資・借金ボタン設定 */
+    /* 1. メメインエリアの投資・借金ボタン設定 */
     [data-testid="stMain"] div.stButton > button {
-        height: 85px !important; 
-        border-radius: 12px !important;
-        padding: 0px 15px !important;
+        height: 56px !important;    /* 以前の高さ(85px)の約2/3 */
+        border-radius: 10px !important;
+        padding: 0px 10px !important;
     }
     
-    /* 文字列（項目名）のフォントサイズを顔文字の半分（22px）に設定 */
+    /* 項目名のフォントサイズを15pxに設定 */
     [data-testid="stMain"] div.stButton > button p {
-        font-size: 22px !important; 
+        font-size: 15px !important; 
         font-weight: bold;
-        line-height: 1.2 !important;
+        line-height: 1.1 !important;
     }
 
-    /* 最初の文字（顔文字）だけを元の特大サイズ（44px）に設定 */
+    /* 最初の顔文字だけを30pxに設定（以前の44pxの約2/3） */
     [data-testid="stMain"] div.stButton > button p::first-letter {
-        font-size: 44px !important;
+        font-size: 30px !important;
     }
 
-    /* 2. サイドバーの「認証」ボタンサイズおよび文字は以前の標準を維持 */
+    /* 2. サイドバーの設定（標準サイズを維持） */
     [data-testid="stSidebar"] div.stButton > button {
         height: auto !important;
         padding: 0.25rem 0.75rem !important;
@@ -54,7 +53,6 @@ def make_hash(password):
 def load_data():
     try:
         df = conn.read(worksheet="Records", ttl="0m")
-        # 自己学習関連の列を除外した、現在の仕様に合わせた構成
         expected_cols = ["real_name", "password", "nickname", "team", "date", "points", "total_points", 
                          "entry_date", "selected_items"]
         for col in expected_cols:
@@ -65,10 +63,10 @@ def load_data():
         return pd.DataFrame(columns=["real_name", "password", "nickname", "team", "date", "points", "total_points", 
                                      "entry_date", "selected_items"])
 
-# --- 2. リスト・マスタ定義（ご提示の項目リストに準拠） ---
+# --- 2. リスト・マスタ定義（幸福の三段ピラミッドに基づく項目） ---
 TEAM_OPTIONS = ["-- 選択してください --", "経営層", "第一システム部", "第二システム部", "第三システム部", "第四システム部", "営業部", "総務部", "新人"]
 
-# 投資型：未来を創り、脳のベースラインを安定させる行動 [cite: 28, 35, 239]
+# 投資型：未来を創る行動 [cite: 45-62]
 INVESTMENT_ITEMS = [
     "経験のない事に挑戦", "料理", "掃除", "睡眠が8時間以上", "入浴、サウナ（シャワーのみはNG）", 
     "朝10分前に出社", "身体を動かす（階段を使う、ウォーキング、スポーツ、ストレッチ）", "勉強", "読書", 
@@ -78,7 +76,7 @@ INVESTMENT_ITEMS = [
     "植物を育てる", "ペットと触れ合う"
 ]
 
-# 借金型：即時的な快楽と引き換えにエネルギーを前借りする行動 [cite: 30, 31, 239]
+# 借金型：エネルギーの前借り [cite: 132-164]
 DEBT_ITEMS = [
     "倫理観に欠ける行動（電車で優先席を譲らない。朝以外にゴミを出す等）", "外食オンリー", "掃除をしない", "睡眠が6時間未満", 
     "シャワーのみで済ませてしまう／お風呂に入らなかった", "過度な飲酒（ビール・酎ハイ1日1本まで。それ以上は過度な飲酒）", 
@@ -92,7 +90,7 @@ DEBT_ITEMS = [
 # --- 3. メイン処理 ---
 def main():
     st.title("🧠 脳内ドーパミン収支報告")
-    st.subheader("幸せホルモンを育てよう！") # [cite: 221]
+    st.subheader("幸せホルモンを育てよう！") 
     
     saved_real_name = st.query_params.get("rn", "")
     saved_nickname = st.query_params.get("nn", "")
@@ -122,15 +120,14 @@ def main():
                 st.rerun()
 
     if not (saved_real_name and saved_nickname and u_pass):
-        st.warning("左側のサイドバーで情報を入力し、認証ボタンを押してください。")
+        st.warning("サイドバーでログインしてください。")
         return
 
     tab1, tab2, tab3 = st.tabs(["📊 今日の記録", "🏆 ランキング", "📈 マイデータ"])
 
     with tab1:
-        st.write(f"### 投資と借金のバランスを整えましょう、{u_nickname} さん") # [cite: 238]
+        st.write(f"### 投資と借金のバランスを整えましょう、{u_nickname} さん") 
         
-        # 対象日の選択制限：本日、昨日、一昨日まで
         target_date = st.date_input(
             "対象日（２日前まで遡って登録、修正が出来ます）", 
             value=date.today(),
@@ -142,7 +139,6 @@ def main():
         cols_inv = st.columns(2)
         for i, item in enumerate(INVESTMENT_ITEMS):
             active = item in st.session_state.selected_inv
-            # 顔文字が先頭（first-letter）に来るように設定
             label = f"{'😊' if active else '😐'} {item}"
             if cols_inv[i % 2].button(label, key=f"inv_{item}", use_container_width=True):
                 if active: st.session_state.selected_inv.remove(item)
@@ -154,7 +150,7 @@ def main():
         cols_debt = st.columns(2)
         for i, item in enumerate(DEBT_ITEMS):
             active = item in st.session_state.selected_debt
-            label = f"{'😊' if active else '😐'} {item}"
+            label = f"{'😰' if active else '😐'} {item}"
             if cols_debt[i % 2].button(label, key=f"debt_{item}", use_container_width=True):
                 if active: st.session_state.selected_debt.remove(item)
                 else: st.session_state.selected_debt.add(item)
@@ -162,14 +158,11 @@ def main():
 
         st.divider()
 
-        # アクションの「個数」で収支を計算 [cite: 239]
         day_count = len(st.session_state.selected_inv) - len(st.session_state.selected_debt)
         st.metric("本日の収支", f"{day_count:+d} アクション")
 
         if st.button("この内容で決算する", type="primary"):
             selected_items_str = ", ".join(list(st.session_state.selected_inv) + list(st.session_state.selected_debt))
-            
-            # 対象日を除いた過去の累計を取得
             past_points_total = all_data[(all_data['real_name'] == u_real_name) & (all_data['date'] != str(target_date))]['points'].sum()
             new_total = past_points_total + day_count
             
@@ -177,12 +170,10 @@ def main():
             new_row = pd.DataFrame([{
                 "real_name": u_real_name, "password": hashed_input_pass, "nickname": u_nickname, 
                 "team": t_name, "date": str(target_date), "points": day_count, 
-                "total_points": new_total,
-                "entry_date": str(date.today()),
+                "total_points": new_total, "entry_date": str(date.today()),
                 "selected_items": selected_items_str
             }])
             
-            # データの保存と反映
             updated_df = pd.concat([
                 all_data[~((all_data['real_name'] == u_real_name) & (all_data['date'] == str(target_date)))], 
                 new_row
@@ -192,10 +183,8 @@ def main():
             
             st.balloons()
             st.success(f"記録しました！ 本日の収支: {day_count:+d} アクション")
-            # 状態をクリア
             st.session_state.selected_inv = set()
             st.session_state.selected_debt = set()
-            # 結果を3秒間表示
             time.sleep(3)
             st.rerun()
 

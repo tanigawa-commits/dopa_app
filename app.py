@@ -9,42 +9,31 @@ import time
 st.set_page_config(page_title="Dopa-Balance Pro", layout="wide")
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-# カスタムCSS：顔文字を大きく、テキストをその半分に設定
+# カスタムCSS：顔文字のサイズとボタンのデザイン
 st.markdown("""
     <style>
-    /* メインエリアの投資・借金ボタン設定 */
+    /* メインエリアのボタン設定 */
     [data-testid="stMain"] div.stButton > button {
-        height: 80px !important;    /* ボタンの囲みのサイズ */
-        border-radius: 12px !important;
+        height: 100px !important; 
+        border-radius: 15px !important;
         padding: 0px 15px !important;
     }
     
-    /* ボタン内のテキスト全体の基本サイズ（項目名のサイズ：顔文字の半分に設定） */
+    /* 顔文字を大きく表示 */
     [data-testid="stMain"] div.stButton > button p {
-        font-size: 20px !important;  /* 項目名のフォントサイズ */
+        font-size: 40px !important; 
         font-weight: bold;
-        line-height: 1.5 !important;
-        display: block !important;
+        line-height: 1.1 !important;
     }
 
-    /* ボタン内の最初の1文字（顔文字）だけを2倍のサイズにする */
-    [data-testid="stMain"] div.stButton > button p::first-letter {
-        font-size: 40px !important;  /* 顔文字のフォントサイズ（現状を維持） */
-    }
-
-    /* サイドバーの「認証」ボタンや文字サイズは以前の標準サイズを維持 */
+    /* サイドバーの認証ボタン（標準サイズ） */
     [data-testid="stSidebar"] div.stButton > button {
         height: auto !important;
-        padding: 0.25rem 0.75rem !important;
     }
     [data-testid="stSidebar"] div.stButton > button p {
         font-size: 16px !important; 
     }
-    [data-testid="stSidebar"] div.stButton > button p::first-letter {
-        font-size: 16px !important; /* サイドバーでは拡大しない */
-    }
     
-    /* ボタン押下時の視覚効果 */
     div.stButton > button:active {
         transform: scale(0.98);
     }
@@ -57,64 +46,40 @@ def make_hash(password):
 def load_data():
     try:
         df = conn.read(worksheet="Records", ttl="0m")
-        # 必要な列の存在確認と初期化
+        # 自己学習関連の列を除外した期待される列
         expected_cols = ["real_name", "password", "nickname", "team", "date", "points", "total_points", 
-                         "entry_date", "selected_items", "learning_type", "learning_minutes"]
+                         "entry_date", "selected_items"]
         for col in expected_cols:
             if col not in df.columns:
                 df[col] = 0
         return df
     except:
         return pd.DataFrame(columns=["real_name", "password", "nickname", "team", "date", "points", "total_points", 
-                                     "entry_date", "selected_items", "learning_type", "learning_minutes"])
+                                     "entry_date", "selected_items"])
 
-# --- 2. リスト・マスタ定義（脳科学理論に基づく） ---
+# --- 2. リスト・マスタ定義 ---
 TEAM_OPTIONS = ["-- 選択してください --", "経営層", "第一システム部", "第二システム部", "第三システム部", "第四システム部", "営業部", "総務部", "新人"]
 
-# 投資型：自己効力感を構築し、長期的なメンタルを向上させる領域 
-INVESTMENT_MASTER = {
-    "楽器の即興演奏": 9.5, # [cite: 45, 46]
-    "ライブに行く": 9.3,   # [cite: 47, 48]
-    "スキー・スノーボード": 9.2, # [cite: 49, 50]
-    "サウナと水風呂": 9.0,   # [cite: 51, 52]
-    "海で泳ぐ": 8.8,         # [cite: 53, 54]
-    "作曲・DTM": 8.4,       # [cite: 55, 56]
-    "長期プロジェクトの完遂": 8.2, # [cite: 57, 58]
-    "追い込む筋トレ": 8.1,   # [cite: 59, 60]
-    "小説を読む": 8.0,       # [cite: 61, 62]
-    "キャンプ": 7.1,         # [cite: 69, 70]
-    "映画鑑賞": 6.7,         # [cite: 75, 76]
-    "部屋の徹底的な断捨離": 6.0, # [cite: 79, 80]
-    "家庭菜園": 5.4,         # [cite: 81, 82]
-    "犬の散歩": 5.0,         # [cite: 87, 88]
-    "十分な睡眠": 2.0,       # [cite: 125, 126]
-    "何もしないでボーッとする": 1.0 # [cite: 129, 130]
-}
+# 投資型項目
+INVESTMENT_ITEMS = [
+    "経験のない事に挑戦", "料理", "掃除", "睡眠が8時間以上", "入浴、サウナ（シャワーのみはNG）", 
+    "朝10分前に出社", "身体を動かす（階段、ウォーキング、ストレッチ等）", "勉強", "読書", 
+    "創作活動（プログラミング、絵、作曲、動画編集等）", "音楽（音楽鑑賞、楽器、カラオケ）", 
+    "ニュースを調べる", "旅行", "行ったことのない店にいく", "普段しないファッションに挑戦", 
+    "普段しないメイク、ネイルに挑戦", "模様替え", "家族で食事", "感謝の言葉を伝える", 
+    "植物を育てる", "ペットと触れ合う"
+]
 
-# 借金型：即座に強い快楽を得るが、活力を前借りする領域 
-DEBT_MASTER = {
-    "借金をしてのギャンブル": 10.0, # [cite: 135, 136]
-    "イヤホンでの爆音視聴": 9.6,   # [cite: 143, 144]
-    "スマホゲームの課金ガチャ": 9.5, # [cite: 145, 146]
-    "アルコール過剰摂取(泥酔)": 9.1, # [cite: 153, 154]
-    "SNSでバズる体験": 8.8,         # [cite: 157, 158]
-    "YouTubeショート・TikTok": 8.5, # [cite: 159, 160]
-    "深夜のジャンクフード・ドカ食い": 8.0, # [cite: 163, 164]
-    "エナジードリンクの常飲": 7.8,   # [cite: 167, 168]
-    "SNSのいいねに一喜一憂": 6.5,   # [cite: 173, 174]
-    "陰口やゴシップで盛り上がる": 5.7, # [cite: 179, 180]
-    "TVをダラダラ見続ける": 4.5,     # [cite: 183, 184]
-    "掃除をしない": 3.8,             # [cite: 187, 188]
-    "夜更かし": 2.0                 # [cite: 197, 198]
-}
-
-LEARNING_OPTIONS = ["読書", "動画視聴", "対面式学習", "プログラム作成", "ネット記事調査"]
-
-def get_brain_rank(points):
-    if points >= 500: return "プラチナ脳（Flow Master）"
-    elif points >= 300: return "ゴールド脳（Investment King）"
-    elif points >= 100: return "シルバー脳（Self-Control）"
-    else: return "ブロンズ脳（Dopamine Beginner）"
+# 借金型項目
+DEBT_ITEMS = [
+    "倫理観に欠ける行動", "外食オンリー", "掃除をしない", "睡眠が6時間未満", 
+    "シャワーのみで済ます／お風呂に入らない", "過度な飲酒", "晩御飯の後に、お菓子や食事をしてしまう", 
+    "ドカ食い（1食2000kcal以上）", "テレビ／動画を見ながら、お菓子を食べる", 
+    "炭酸飲料を飲む（エナドリ、コーラ等）", "タバコの喫煙（紙、加熱式、電子）", 
+    "スマホを1日2時間以上利用", "動画視聴が1日2時間以上利用", "SNSを1日2時間以上利用", 
+    "ゲームを1日2時間以上プレイ", "ログイン報酬のためだけに起動", "ゲームへの課金", 
+    "ギャンブル", "借金（リボ、キャッシング等）をして浪費", "ECサイトで衝動買い", "外に出ない"
+]
 
 # --- 3. メイン処理 ---
 def main():
@@ -156,101 +121,70 @@ def main():
 
     with tab1:
         st.write(f"### 投資と借金のバランスを整えましょう、{u_nickname} さん")
+        target_date = st.date_input("対象日（２日前まで修正可）", value=date.today(), min_value=date.today()-timedelta(days=2), max_value=date.today())
         
-        target_date = st.date_input(
-            "対象日（２日前まで遡って登録、修正が出来ます）", 
-            value=date.today(),
-            min_value=date.today() - timedelta(days=2),
-            max_value=date.today()
-        )
-        
-        st.markdown("#### 🟢 投資型 (+) - 未来を創る行動")
+        st.markdown("#### 🟢 投資型 - 未来を創る行動")
         cols_inv = st.columns(2)
-        for i, (item, val) in enumerate(INVESTMENT_MASTER.items()):
+        for i, item in enumerate(INVESTMENT_ITEMS):
             active = item in st.session_state.selected_inv
-            # 顔文字を先頭に配置（CSSの::first-letterを適用するため）
-            label = f"{'😊' if active else '😐'} {item}"
-            if cols_inv[i % 2].button(label, key=f"inv_{item}", use_container_width=True):
-                if active: st.session_state.selected_inv.remove(item)
-                else: st.session_state.selected_inv.add(item)
+            if cols_inv[i % 2].button(f"{'😊' if active else '😐'} {item}", key=f"inv_{item}", use_container_width=True):
+                st.session_state.selected_inv.remove(item) if active else st.session_state.selected_inv.add(item)
                 st.rerun()
 
         st.divider()
-        st.markdown("#### 🔴 借金型 (-) - エネルギーの前借り")
+        st.markdown("#### 🔴 借金型 - エネルギーの前借り")
         cols_debt = st.columns(2)
-        for i, (item, val) in enumerate(DEBT_MASTER.items()):
+        for i, item in enumerate(DEBT_ITEMS):
             active = item in st.session_state.selected_debt
-            label = f"{'😊' if active else '😐'} {item}"
-            if cols_debt[i % 2].button(label, key=f"debt_{item}", use_container_width=True):
-                if active: st.session_state.selected_debt.remove(item)
-                else: st.session_state.selected_debt.add(item)
+            if cols_debt[i % 2].button(f"{'😊' if active else '😐'} {item}", key=f"debt_{item}", use_container_width=True):
+                st.session_state.selected_debt.remove(item) if active else st.session_state.selected_debt.add(item)
                 st.rerun()
 
         st.divider()
-        col_l1, col_l2 = st.columns(2)
-        with col_l1:
-            l_type = st.selectbox("📚 自己学習項目", ["-- 未選択 --"] + LEARNING_OPTIONS)
-        with col_l2:
-            l_min = st.selectbox("⏱️ 学習時間 (分)", options=list(range(0, 601, 10)), index=0)
 
-        day_points = sum(INVESTMENT_MASTER[k] for k in st.session_state.selected_inv) - \
-                     sum(DEBT_MASTER[k] for k in st.session_state.selected_debt)
-        
-        st.metric("暫定スコア", f"{day_points:+.1f} DP")
+        # 収支計算
+        day_count = len(st.session_state.selected_inv) - len(st.session_state.selected_debt)
+        st.metric("本日の収支", f"{day_count:+d} アクション")
 
         if st.button("この内容で決算する", type="primary"):
             selected_items_str = ", ".join(list(st.session_state.selected_inv) + list(st.session_state.selected_debt))
-            past_total = all_data[(all_data['real_name'] == u_real_name) & (all_data['date'] != str(target_date))]['points'].sum()
+            past_points_total = all_data[(all_data['real_name'] == u_real_name) & (all_data['date'] != str(target_date))]['points'].sum()
             
             new_row = pd.DataFrame([{
                 "real_name": u_real_name, "password": make_hash(u_pass), "nickname": u_nickname, 
-                "team": t_name, "date": str(target_date), "points": round(day_points, 1), 
-                "total_points": round(past_total + day_points, 1), "entry_date": str(date.today()),
-                "selected_items": selected_items_str, 
-                "learning_type": l_type if l_type != "-- 未選択 --" else None,
-                "learning_minutes": l_min
+                "team": t_name, "date": str(target_date), "points": day_count, 
+                "total_points": past_points_total + day_count, "entry_date": str(date.today()),
+                "selected_items": selected_items_str
             }])
             
             updated_df = pd.concat([all_data[~((all_data['real_name'] == u_real_name) & (all_data['date'] == str(target_date)))], new_row]).reset_index(drop=True)
             conn.update(worksheet="Records", data=updated_df)
             
             st.balloons()
-            st.success(f"記録しました！ 今日の収支: {day_points:+.1f} / 学習: {l_min}分")
+            st.success(f"記録しました！ 本日の収支: {day_count:+d} アクション")
             st.session_state.selected_inv, st.session_state.selected_debt = set(), set()
-            time.sleep(3) 
+            time.sleep(3)
             st.rerun()
 
     with tab2:
-        col_r1, col_r2 = st.columns(2)
         if not all_data.empty:
-            with col_r1:
-                st.subheader("🏆 DP収支ランキング")
-                rdf = all_data.groupby(['nickname', 'team'])['points'].sum().reset_index()
-                rdf['称号'] = rdf['points'].apply(get_brain_rank)
-                st.dataframe(rdf.sort_values("points", ascending=False), use_container_width=True, hide_index=True)
-            with col_r2:
-                st.subheader("📖 自己学習ランキング")
-                ldf = all_data.groupby(['nickname', 'team'])['learning_minutes'].sum().reset_index()
-                st.dataframe(ldf.sort_values("learning_minutes", ascending=False).rename(columns={'learning_minutes':'合計学習(分)'}), use_container_width=True, hide_index=True)
+            st.subheader("🏆 収支累計ランキング")
+            rdf = all_data.groupby(['nickname', 'team'])['points'].sum().reset_index()
+            st.dataframe(rdf.sort_values("points", ascending=False).rename(columns={'points':'累計アクション収支'}), use_container_width=True, hide_index=True)
 
     with tab3:
         udata = all_data[all_data['real_name'] == u_real_name].copy()
         if not udata.empty:
             udata['date'] = pd.to_datetime(udata['date'])
             udata = udata.sort_values("date")
-            
-            st.subheader("📈 ドーパミン投資推移 (累積)")
+            st.subheader("📈 アクション収支推移 (累積)")
             st.line_chart(udata.set_index("date")["total_points"])
-            
-            st.subheader("📖 学習時間の推移 (累積分)")
-            udata['累積学習'] = udata['learning_minutes'].cumsum()
-            st.line_chart(udata.set_index("date")["累積学習"])
             
             st.divider()
             st.subheader("📋 履歴詳細")
             h_df = udata.copy()
             h_df['日付'] = h_df['date'].dt.strftime('%Y-%m-%d')
-            st.dataframe(h_df[['日付', 'points', 'selected_items', 'learning_minutes']].rename(columns={'points':'収支','selected_items':'選択項目','learning_minutes':'学習(分)'}), hide_index=True, use_container_width=True)
+            st.dataframe(h_df[['日付', 'points', 'selected_items']].rename(columns={'points':'収支','selected_items':'選択項目'}), hide_index=True, use_container_width=True)
         else:
             st.info("データがまだありません。")
 

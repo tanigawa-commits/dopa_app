@@ -6,7 +6,7 @@ import hashlib
 import time
 
 # --- 1. アプリ設定とDB接続 ---
-st.set_page_config(page_title="Dopa-Balance Pro", layout="wide")
+st.set_page_config(page_title="Dopamine Tracker", layout="wide")
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 # カスタムCSS
@@ -47,7 +47,7 @@ def load_data_cached():
     except:
         return pd.DataFrame(columns=["real_name", "password", "nickname", "team", "date", "points", "total_points", "entry_date", "selected_items"])
 
-# --- 2. リスト・マスタ定義 (image_4ee5a8.pngの内容に更新) ---
+# --- 2. リスト・マスタ定義 ---
 INVESTMENT_ITEMS = [
     "料理", "掃除", "睡眠が8時間以上", "湯舟に入浴、サウナ", "朝10分前に出社",
     "身体を動かした（ウォーキング以上の負荷）", "健康的な食生活（栄養バランスが取れている）",
@@ -70,8 +70,9 @@ TEAM_OPTIONS = ["-- 選択してください --", "経営層", "第一システ�
 
 # --- 3. メイン処理 ---
 def main():
-    st.title("🧠 脳内ドーパミン収支報告")
-    st.subheader("幸せホルモンを育てよう！")
+    # タイトルとサブタイトルの変更
+    st.title("Dopamine Tracker")
+    st.subheader("今日の行動を記録して、脳の健康状態を可視化しましょう")
     
     saved_real_name = st.query_params.get("rn", "")
     saved_nickname = st.query_params.get("nn", "")
@@ -96,16 +97,20 @@ def main():
         return
 
     all_data = load_data_cached()
+    
+    # 累積ポイントの算出
+    user_total_pts = all_data[all_data['real_name'] == saved_real_name]['points'].sum()
+
     tab1, tab2, tab3 = st.tabs(["📊 今日の記録", "🏆 ランキング", "📈 マイデータ"])
 
     with tab1:
-        st.write(f"### 投資と借金のバランスを整えましょう、{u_nickname} さん")
+        # 挨拶と累積ポイント表示の変更
+        st.write(f"### {saved_nickname}さんのこれまでのポイントは{user_total_pts:g}です")
         target_date = st.date_input("対象日（２日前まで修正可）", value=date.today(), min_value=date.today()-timedelta(days=2), max_value=date.today())
 
         @st.fragment
         def record_ui():
             st.divider()
-            # ステータス表示用プレースホルダー
             status_placeholder = st.empty()
             
             st.write("") 
@@ -125,19 +130,16 @@ def main():
                     if st.checkbox(item, key=f"debt_{item}"):
                         sel_debt.append(item)
             
-            # --- ロジック計算 ---
             n_inv = len(sel_inv)
             n_debt = len(sel_debt)
             
-            # 星は常に10個表示
             inv_stars = "★" * min(n_inv, 10) + "☆" * max(0, 10 - n_inv)
             debt_stars = "★" * min(n_debt, 10) + "☆" * max(0, 10 - n_debt)
             
-            # 11個以上のラベル表示切り替え
-            inv_label = f"{n_inv}個達成" if n_inv <= 10 else "10個以上達成"
-            debt_label = f"{n_debt}個実行" if n_debt <= 10 else "10個以上達成" # 要望に従い、借金型も達成と表記
+            # ラベル表示の修正（xx個実施 / 10個以上実施）
+            inv_label = f"{n_inv}個実施" if n_inv <= 10 else "10個以上実施"
+            debt_label = f"{n_debt}個実施" if n_debt <= 10 else "10個以上実施"
 
-            # ステータスカード更新
             with status_placeholder.container():
                 sc1, sc2 = st.columns(2)
                 with sc1:

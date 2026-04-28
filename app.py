@@ -10,7 +10,7 @@ import calendar
 st.set_page_config(page_title="Dopamine Tracker", layout="wide")
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-# カスタムCSS
+# カスタムCSS：ステータスカードとカレンダーのデザイン
 st.markdown("""
     <style>
     .status-card {
@@ -47,7 +47,7 @@ def load_data_cached():
     try:
         return conn.read(worksheet="Records", ttl="1m")
     except:
-        # investment_items と debt_items を含む初期構成
+        # 初期列構成：投資型と借金型を分けて保存
         return pd.DataFrame(columns=["real_name", "password", "nickname", "team", "date", "points", "total_points", "entry_date", "investment_items", "debt_items"])
 
 # --- 2. リスト・マスタ定義 ---
@@ -106,7 +106,8 @@ def main():
 
     # --- タブ1: 記録 ---
     with tab1:
-        st.write(f"### {saved_nickname}さんのこれまでのポイントは{user_total_pts:g}です")
+        # ポイントの前後に半角スペースを追加
+        st.write(f"### {saved_nickname}さんのこれまでのポイントは {user_total_pts:g} です")
         target_date = st.date_input("対象日（２日前まで修正可）", value=date.today(), min_value=date.today()-timedelta(days=2), max_value=date.today())
 
         @st.fragment
@@ -124,6 +125,8 @@ def main():
             n_inv, n_debt = len(sel_inv), len(sel_debt)
             inv_stars = "★" * min(n_inv, 10) + "☆" * max(0, 10 - n_inv)
             debt_stars = "★" * min(n_debt, 10) + "☆" * max(0, 10 - n_debt)
+            
+            # 指定のラベルロジック
             inv_label = f"{n_inv}個実施" if n_inv <= 10 else "10個以上実施"
             debt_label = f"{n_debt}個実施" if n_debt <= 10 else "10個以上実施"
 
@@ -149,11 +152,11 @@ def main():
                         "real_name": saved_real_name, "password": make_hash(u_pass), "nickname": saved_nickname, 
                         "team": saved_team, "date": str(target_date), "points": day_count, 
                         "total_points": past_points + day_count, "entry_date": str(date.today()),
-                        "investment_items": ", ".join(sel_inv), # 分割保存
-                        "debt_items": ", ".join(sel_debt)      # 分割保存
+                        "investment_items": ", ".join(sel_inv),
+                        "debt_items": ", ".join(sel_debt)
                     }])
                     
-                    # 古い構成（selected_items）の列がある場合は削除して更新
+                    # 旧形式の列がある場合は整理
                     if 'selected_items' in current_all_data.columns:
                         current_all_data = current_all_data.drop(columns=['selected_items'])
                         
@@ -173,7 +176,7 @@ def main():
             rdf = all_data.groupby(['nickname', 'team'])['points'].sum().reset_index()
             st.dataframe(rdf.sort_values("points", ascending=False).rename(columns={'points':'累計収支'}), use_container_width=True, hide_index=True)
 
-    # --- タブ3: マイデータ（カレンダー表示） ---
+    # --- タブ3: マイデータ ---
     with tab3:
         st.subheader("🗓 履歴カレンダー")
         
@@ -185,7 +188,7 @@ def main():
         if 'show_all_history' not in st.session_state:
             st.session_state.show_all_history = False
 
-        # 月のナビゲーション
+        # 月ナビゲーション
         nav_col1, nav_col2, nav_col3 = st.columns([1, 2, 1])
         with nav_col1:
             if st.button("⬅️ 前の月"):
@@ -223,7 +226,7 @@ def main():
                     if cols[i].button(label, key=f"btn_{target_str}", use_container_width=True):
                         st.session_state.selected_cal_date = target_str
 
-        # 特定日の詳細表示（投資型・借金型を分けて表示）
+        # 日別の詳細表示
         if st.session_state.selected_cal_date:
             st.divider()
             detail = user_records[user_records['date'] == st.session_state.selected_cal_date]
@@ -235,15 +238,15 @@ def main():
                 with det_c1:
                     st.write("**🟢 投資型項目:**")
                     inv_raw = detail.iloc[0].get('investment_items', "")
-                    st.write(inv_raw if pd.notna(inv_raw) and str(inv_raw) != "" else "なし")
+                    st.write(str(inv_raw) if pd.notna(inv_raw) and str(inv_raw) != "" else "なし")
                 with det_c2:
                     st.write("**🔴 借金型項目:**")
                     debt_raw = detail.iloc[0].get('debt_items', "")
-                    st.write(debt_raw if pd.notna(debt_raw) and str(debt_raw) != "" else "なし")
+                    st.write(str(debt_raw) if pd.notna(debt_raw) and str(debt_raw) != "" else "なし")
             else:
                 st.info(f"{st.session_state.selected_cal_date} のデータはありません。")
 
-        # --- 全ての履歴表示ボタン ---
+        # 全履歴表示
         st.divider()
         if st.button("全ての履歴を表示／非表示"):
             st.session_state.show_all_history = not st.session_state.show_all_history

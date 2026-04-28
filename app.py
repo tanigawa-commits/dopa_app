@@ -9,40 +9,31 @@ import time
 st.set_page_config(page_title="Dopa-Balance Pro", layout="wide")
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-# カスタムCSS：指定の比率で各サイズをコンパクトに調整
+# カスタムCSS：ステータスカードのデザイン調整
 st.markdown("""
     <style>
-    /* 1. メメインエリアの投資・借金ボタン設定 */
-    [data-testid="stMain"] div.stButton > button {
-        height: 56px !important;    /* 以前の高さ(85px)の約2/3 */
-        border-radius: 10px !important;
-        padding: 0px 10px !important;
+    .status-card {
+        border: 1px solid #e6e9ef;
+        border-radius: 15px;
+        padding: 20px;
+        text-align: center;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+        background-color: white;
+        margin-bottom: 20px;
     }
-    
-    /* 項目名のフォントサイズを15pxに設定 */
-    [data-testid="stMain"] div.stButton > button p {
-        font-size: 15px !important; 
+    .star-display {
+        font-size: 32px;
+        color: #ff4b4b; /* 借金用は赤、投資用は青に動的に変える */
+        margin: 10px 0;
+    }
+    .status-label {
+        font-size: 18px;
         font-weight: bold;
-        line-height: 1.1 !important;
+        color: #31333F;
     }
-
-    /* 最初の顔文字だけを30pxに設定（以前の44pxの約2/3） */
-    [data-testid="stMain"] div.stButton > button p::first-letter {
-        font-size: 30px !important;
-    }
-
-    /* 2. サイドバーの設定（標準サイズを維持） */
-    [data-testid="stSidebar"] div.stButton > button {
-        height: auto !important;
-        padding: 0.25rem 0.75rem !important;
-    }
-    [data-testid="stSidebar"] div.stButton > button p,
-    [data-testid="stSidebar"] div.stButton > button p::first-letter {
-        font-size: 16px !important; 
-    }
-    
-    div.stButton > button:active {
-        transform: scale(0.98);
+    .status-count {
+        font-size: 14px;
+        color: #5e6064;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -63,34 +54,24 @@ def load_data():
         return pd.DataFrame(columns=["real_name", "password", "nickname", "team", "date", "points", "total_points", 
                                      "entry_date", "selected_items"])
 
-# --- 2. リスト・マスタ定義（幸福の三段ピラミッドに基づく項目） ---
+# --- 2. リスト・マスタ定義 ---
 TEAM_OPTIONS = ["-- 選択してください --", "経営層", "第一システム部", "第二システム部", "第三システム部", "第四システム部", "営業部", "総務部", "新人"]
 
-# 投資型：未来を創る行動 [cite: 45-62]
 INVESTMENT_ITEMS = [
-    "経験のない事に挑戦", "料理", "掃除", "睡眠が8時間以上", "入浴、サウナ（シャワーのみはNG）", 
-    "朝10分前に出社", "身体を動かす（階段を使う、ウォーキング、スポーツ、ストレッチ）", "勉強", "読書", 
-    "創作活動（プログラミング、絵を描く、小説を書く、DTM、DIY、動画編集）", "音楽（音楽鑑賞、楽器、カラオケ）", 
-    "ニュースを調べる", "旅行", "行ったことのない店にいく", "普段しないファッションに挑戦", 
-    "普段しないメイク、ネイルに挑戦", "模様替え", "家族で食事", "感謝の言葉を伝える", 
-    "植物を育てる", "ペットと触れ合う"
+    "経験のない事への挑戦", "料理", "掃除", "睡眠が8時間以上", "入浴、サウナ", 
+    "朝10分前に出社", "身体を動かす", "勉強", "読書", "創作活動"
 ]
 
-# 借金型：エネルギーの前借り [cite: 132-164]
 DEBT_ITEMS = [
-    "倫理観に欠ける行動（電車で優先席を譲らない。朝以外にゴミを出す等）", "外食オンリー", "掃除をしない", "睡眠が6時間未満", 
-    "シャワーのみで済ませてしまう／お風呂に入らなかった", "過度な飲酒（ビール・酎ハイ1日1本まで。それ以上は過度な飲酒）", 
-    "晩御飯の後に、お菓子や食事をしてしまう", "ドカ食い（1食2000キロカロリー以上）", "テレビ／動画を見ながら、お菓子を食べる", 
-    "エナジードリンクや、コーラなどカロリーの高い炭酸飲料を飲む", "タバコの喫煙（紙、加熱式、電子）", 
-    "スマホを1日2時間以上利用", "Youtube等で動画視聴が1日2時間以上利用", "SNSを1日2時間以上利用", 
-    "ゲームを1日2時間以上プレイ", "ソシャゲのログイン報酬を受け取るためだけに起動", "ゲームへの課金", 
-    "ギャンブル", "借金（リボ払い、キャッシング）をして浪費をしてしまう", "Amazonや楽天等のECサイトで衝動買い", "外に出ない"
+    "倫理観に欠ける行動", "外食オンリー", "掃除をしない", "睡眠が6時間未満", 
+    "シャワーのみ/風呂抜き", "朝ギリギリに出社", "過度な飲酒", "食後の間食", 
+    "ドカ食い(2000kcal+)", "動画見ながらお菓子"
 ]
 
 # --- 3. メイン処理 ---
 def main():
     st.title("🧠 脳内ドーパミン収支報告")
-    st.subheader("幸せホルモンを育てよう！") 
+    st.subheader("幸せホルモンを育てよう！")
     
     saved_real_name = st.query_params.get("rn", "")
     saved_nickname = st.query_params.get("nn", "")
@@ -98,93 +79,103 @@ def main():
     
     all_data = load_data()
 
-    if 'selected_inv' not in st.session_state: st.session_state.selected_inv = set()
-    if 'selected_debt' not in st.session_state: st.session_state.selected_debt = set()
-
     with st.sidebar:
         st.header("🔑 ユーザー認証")
         u_real_name = st.text_input("氏名（実名）", value=saved_real_name, key="login_rn")
         u_pass = st.text_input("パスワード", type="password", key="login_pw")
         u_nickname = st.text_input("ニックネーム", value=saved_nickname, key="login_nn")
-        
-        default_team_idx = TEAM_OPTIONS.index(saved_team) if saved_team in TEAM_OPTIONS else 0
-        t_name = st.selectbox("所属チーム", TEAM_OPTIONS, index=default_team_idx, key="login_team")
+        t_name = st.selectbox("所属チーム", TEAM_OPTIONS, index=TEAM_OPTIONS.index(saved_team) if saved_team in TEAM_OPTIONS else 0)
         
         if st.button("認証"):
             if not u_real_name or not u_pass or not u_nickname or t_name == TEAM_OPTIONS[0]:
                 st.error("全項目を入力してください。")
             else:
                 st.query_params.update(rn=u_real_name, nn=u_nickname, t=t_name)
-                st.success("認証完了")
-                time.sleep(0.5)
                 st.rerun()
 
     if not (saved_real_name and saved_nickname and u_pass):
-        st.warning("サイドバーでログインしてください。")
+        st.warning("左側のサイドバーで情報を入力し、認証ボタンを押してください。")
         return
 
     tab1, tab2, tab3 = st.tabs(["📊 今日の記録", "🏆 ランキング", "📈 マイデータ"])
 
     with tab1:
-        st.write(f"### 投資と借金のバランスを整えましょう、{u_nickname} さん") 
+        st.write(f"### 投資と借金のバランスを整えましょう、{u_nickname} さん")
+        target_date = st.date_input("対象日（２日前まで修正可）", value=date.today(), min_value=date.today()-timedelta(days=2), max_value=date.today())
+
+        # --- 選択状態の管理 ---
+        if 'selected_inv' not in st.session_state: st.session_state.selected_inv = []
+        if 'selected_debt' not in st.session_state: st.session_state.selected_debt = []
+
+        # --- ステータスカード表示領域 ---
+        c1, c2 = st.columns(2)
         
-        target_date = st.date_input(
-            "対象日（２日前まで遡って登録、修正が出来ます）", 
-            value=date.today(),
-            min_value=date.today() - timedelta(days=2),
-            max_value=date.today()
-        )
-        
-        st.markdown("#### 🟢 投資型 - 未来を創る行動")
-        cols_inv = st.columns(2)
-        for i, item in enumerate(INVESTMENT_ITEMS):
-            active = item in st.session_state.selected_inv
-            label = f"{'😊' if active else '😐'} {item}"
-            if cols_inv[i % 2].button(label, key=f"inv_{item}", use_container_width=True):
-                if active: st.session_state.selected_inv.remove(item)
-                else: st.session_state.selected_inv.add(item)
-                st.rerun()
+        # 投資型ステータス
+        n_inv = len(st.session_state.selected_inv)
+        inv_stars = "★" * min(n_inv, 10) + "☆" * max(0, 10 - n_inv)
+        with c1:
+            st.markdown(f"""
+                <div class="status-card">
+                    <div class="status-label" style="color:#0066cc;">投資型ステータス</div>
+                    <div class="star-display" style="color:#00cc99;">{inv_stars}</div>
+                    <div class="status-count">{n_inv}個達成</div>
+                </div>
+                """, unsafe_allow_html=True)
+
+        # 借金型ステータス
+        n_debt = len(st.session_state.selected_debt)
+        debt_stars = "★" * min(n_debt, 10) + "☆" * max(0, 10 - n_debt)
+        with c2:
+            st.markdown(f"""
+                <div class="status-card">
+                    <div class="status-label" style="color:#cc3333;">借金型ステータス</div>
+                    <div class="star-display" style="color:#ff4b4b;">{debt_stars}</div>
+                    <div class="status-count">{n_debt}個実行</div>
+                </div>
+                """, unsafe_allow_html=True)
 
         st.divider()
-        st.markdown("#### 🔴 借金型 - エネルギーの前借り")
-        cols_debt = st.columns(2)
-        for i, item in enumerate(DEBT_ITEMS):
-            active = item in st.session_state.selected_debt
-            label = f"{'😰' if active else '😐'} {item}"
-            if cols_debt[i % 2].button(label, key=f"debt_{item}", use_container_width=True):
-                if active: st.session_state.selected_debt.remove(item)
-                else: st.session_state.selected_debt.add(item)
-                st.rerun()
+
+        # --- メイン選択領域 ---
+        col_inv, col_debt = st.columns(2)
+        
+        with col_inv:
+            st.markdown("#### 🟢 投資型 (自己投資)")
+            temp_inv = []
+            for item in INVESTMENT_ITEMS:
+                if st.checkbox(item, key=f"chk_inv_{item}"):
+                    temp_inv.append(item)
+            st.session_state.selected_inv = temp_inv
+
+        with col_debt:
+            st.markdown("#### 🔴 借金型 (即時快楽)")
+            temp_debt = []
+            for item in DEBT_ITEMS:
+                if st.checkbox(item, key=f"chk_debt_{item}"):
+                    temp_debt.append(item)
+            st.session_state.selected_debt = temp_debt
 
         st.divider()
-
+        
         day_count = len(st.session_state.selected_inv) - len(st.session_state.selected_debt)
-        st.metric("本日の収支", f"{day_count:+d} アクション")
+        st.metric("本日の収支累計", f"{day_count:+d} アクション")
 
         if st.button("この内容で決算する", type="primary"):
-            selected_items_str = ", ".join(list(st.session_state.selected_inv) + list(st.session_state.selected_debt))
-            past_points_total = all_data[(all_data['real_name'] == u_real_name) & (all_data['date'] != str(target_date))]['points'].sum()
-            new_total = past_points_total + day_count
+            selected_items_str = ", ".join(st.session_state.selected_inv + st.session_state.selected_debt)
+            past_points = all_data[(all_data['real_name'] == u_real_name) & (all_data['date'] != str(target_date))]['points'].sum()
             
-            hashed_input_pass = make_hash(u_pass)
             new_row = pd.DataFrame([{
-                "real_name": u_real_name, "password": hashed_input_pass, "nickname": u_nickname, 
+                "real_name": u_real_name, "password": make_hash(u_pass), "nickname": u_nickname, 
                 "team": t_name, "date": str(target_date), "points": day_count, 
-                "total_points": new_total, "entry_date": str(date.today()),
+                "total_points": past_points + day_count, "entry_date": str(date.today()),
                 "selected_items": selected_items_str
             }])
             
-            updated_df = pd.concat([
-                all_data[~((all_data['real_name'] == u_real_name) & (all_data['date'] == str(target_date)))], 
-                new_row
-            ]).reset_index(drop=True)
-            
+            updated_df = pd.concat([all_data[~((all_data['real_name'] == u_real_name) & (all_data['date'] == str(target_date)))], new_row]).reset_index(drop=True)
             conn.update(worksheet="Records", data=updated_df)
             
             st.balloons()
-            st.success(f"記録しました！ 本日の収支: {day_count:+d} アクション")
-            st.session_state.selected_inv = set()
-            st.session_state.selected_debt = set()
+            st.success("決算が完了しました！")
             time.sleep(3)
             st.rerun()
 
@@ -192,7 +183,7 @@ def main():
         if not all_data.empty:
             st.subheader("🏆 累計アクション収支ランキング")
             rdf = all_data.groupby(['nickname', 'team'])['points'].sum().reset_index()
-            st.dataframe(rdf.sort_values("points", ascending=False).rename(columns={'points':'累計アクション収支'}), use_container_width=True, hide_index=True)
+            st.dataframe(rdf.sort_values("points", ascending=False).rename(columns={'points':'累計収支'}), use_container_width=True, hide_index=True)
 
     with tab3:
         udata = all_data[all_data['real_name'] == u_real_name].copy()
@@ -201,7 +192,6 @@ def main():
             udata = udata.sort_values("date")
             st.subheader("📈 アクション収支推移 (累積)")
             st.line_chart(udata.set_index("date")["total_points"])
-            
             st.divider()
             st.subheader("📋 履歴詳細")
             h_df = udata.copy()

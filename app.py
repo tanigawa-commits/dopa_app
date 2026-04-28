@@ -35,9 +35,7 @@ st.markdown("""
         font-size: 14px;
         color: #5e6064;
     }
-    /* カレンダー用スタイル */
     .cal-day-header { text-align: center; font-weight: bold; padding: 5px; border-bottom: 1px solid #eee; }
-    .cal-date-indicator { color: #ff4b4b; font-size: 10px; line-height: 1; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -51,7 +49,7 @@ def load_data_cached():
     except:
         return pd.DataFrame(columns=["real_name", "password", "nickname", "team", "date", "points", "total_points", "entry_date", "selected_items"])
 
-# --- 2. リスト・マスタ定義 ---
+# --- 2. リスト・マスタ定義（脳科学理論に基づく項目） ---
 INVESTMENT_ITEMS = [
     "料理", "掃除", "睡眠が8時間以上", "湯舟に入浴、サウナ", "朝10分前に出社",
     "身体を動かした（ウォーキング以上の負荷）", "健康的な食生活（栄養バランスが取れている）",
@@ -74,6 +72,7 @@ TEAM_OPTIONS = ["-- 選択してください --", "経営層", "第一システ�
 
 # --- 3. メイン処理 ---
 def main():
+    # タイトルとサブタイトルの指定反映
     st.title("Dopamine Tracker")
     st.subheader("今日の行動を記録して、脳の健康状態を可視化しましょう")
     
@@ -106,6 +105,7 @@ def main():
 
     # --- タブ1: 記録 ---
     with tab1:
+        # 指定の挨拶文と累積ポイント表示
         st.write(f"### {saved_nickname}さんのこれまでのポイントは{user_total_pts:g}です")
         target_date = st.date_input("対象日（２日前まで修正可）", value=date.today(), min_value=date.today()-timedelta(days=2), max_value=date.today())
 
@@ -125,6 +125,8 @@ def main():
             n_inv, n_debt = len(sel_inv), len(sel_debt)
             inv_stars = "★" * min(n_inv, 10) + "☆" * max(0, 10 - n_inv)
             debt_stars = "★" * min(n_debt, 10) + "☆" * max(0, 10 - n_debt)
+            
+            # 指定のラベルロジック（xx個実施 / 10個以上実施）
             inv_label = f"{n_inv}個実施" if n_inv <= 10 else "10個以上実施"
             debt_label = f"{n_debt}個実施" if n_debt <= 10 else "10個以上実施"
 
@@ -167,7 +169,6 @@ def main():
     with tab3:
         st.subheader("🗓 履歴カレンダー")
         
-        # セッション状態の初期化
         if 'cal_year' not in st.session_state:
             st.session_state.cal_year = date.today().year
             st.session_state.cal_month = date.today().month
@@ -197,13 +198,11 @@ def main():
         cal = calendar.monthcalendar(st.session_state.cal_year, st.session_state.cal_month)
         user_records = all_data[all_data['real_name'] == saved_real_name]
         
-        # 曜日ヘッダー
         days = ["月", "火", "水", "木", "金", "土", "日"]
         cols = st.columns(7)
         for i, d in enumerate(days):
             cols[i].markdown(f"<div class='cal-day-header'>{d}</div>", unsafe_allow_html=True)
 
-        # 日付ボタンの生成
         for week in cal:
             cols = st.columns(7)
             for i, day in enumerate(week):
@@ -212,15 +211,11 @@ def main():
                 else:
                     target_str = f"{st.session_state.cal_year}-{st.session_state.cal_month:02d}-{day:02d}"
                     has_data = not user_records[user_records['date'] == target_str].empty
-                    
-                    label = f"{day}"
-                    if has_data:
-                        label += " 🔴"
-                    
+                    label = f"{day} 🔴" if has_data else f"{day}"
                     if cols[i].button(label, key=f"btn_{target_str}", use_container_width=True):
                         st.session_state.selected_cal_date = target_str
 
-        # 詳細表示エリア
+        # 詳細表示エリアのエラー対策修正
         if st.session_state.selected_cal_date:
             st.divider()
             detail = user_records[user_records['date'] == st.session_state.selected_cal_date]
@@ -228,8 +223,14 @@ def main():
                 st.markdown(f"#### 📅 {st.session_state.selected_cal_date} の詳細")
                 st.write(f"**収支ポイント:** {detail.iloc[0]['points']:+g}")
                 st.write(f"**実施した項目:**")
-                items = detail.iloc[0]['selected_items'].split(", ")
-                st.write(", ".join(items))
+                
+                # --- エラー回避：文字列に変換してから分割 ---
+                raw_items = detail.iloc[0]['selected_items']
+                if pd.notna(raw_items) and str(raw_items) != "0":
+                    items = str(raw_items).split(", ")
+                    st.write(", ".join(items))
+                else:
+                    st.write("記録された項目はありません。")
             else:
                 st.info(f"{st.session_state.selected_cal_date} のデータはありません。")
 

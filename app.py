@@ -47,7 +47,8 @@ def load_data_cached():
     try:
         return conn.read(worksheet="Records", ttl="1m")
     except:
-        return pd.DataFrame(columns=["real_name", "password", "nickname", "team", "date", "points", "total_points", "entry_date", "selected_items"])
+        # investment_items と debt_items を含む初期構成
+        return pd.DataFrame(columns=["real_name", "password", "nickname", "team", "date", "points", "total_points", "entry_date", "investment_items", "debt_items"])
 
 # --- 2. リスト・マスタ定義 ---
 INVESTMENT_ITEMS = [
@@ -112,7 +113,6 @@ def main():
         def record_ui():
             st.divider()
             status_placeholder = st.empty()
-            st.write("") 
             col_inv, col_debt = st.columns(2)
             with col_inv:
                 st.markdown("#### 🟢 投資型 (自己投資)")
@@ -143,9 +143,20 @@ def main():
             if st.button("この内容で決算する", type="primary"):
                 with st.spinner("送信中..."):
                     current_all_data = conn.read(worksheet="Records", ttl="0s")
-                    selected_items_str = ", ".join(sel_inv + sel_debt)
                     past_points = current_all_data[(current_all_data['real_name'] == saved_real_name) & (current_all_data['date'] != str(target_date))]['points'].sum()
-                    new_row = pd.DataFrame([{"real_name": saved_real_name, "password": make_hash(u_pass), "nickname": saved_nickname, "team": saved_team, "date": str(target_date), "points": day_count, "total_points": past_points + day_count, "entry_date": str(date.today()), "selected_items": selected_items_str}])
+                    
+                    new_row = pd.DataFrame([{
+                        "real_name": saved_real_name, "password": make_hash(u_pass), "nickname": saved_nickname, 
+                        "team": saved_team, "date": str(target_date), "points": day_count, 
+                        "total_points": past_points + day_count, "entry_date": str(date.today()),
+                        "investment_items": ", ".join(sel_inv), # 分割保存
+                        "debt_items": ", ".join(sel_debt)      # 分割保存
+                    }])
+                    
+                    # 古い構成（selected_items）の列がある場合は削除して更新
+                    if 'selected_items' in current_all_data.columns:
+                        current_all_data = current_all_data.drop(columns=['selected_items'])
+                        
                     updated_df = pd.concat([current_all_data[~((current_all_data['real_name'] == saved_real_name) & (current_all_data['date'] == str(target_date)))], new_row]).reset_index(drop=True)
                     conn.update(worksheet="Records", data=updated_df)
                     st.cache_data.clear()
@@ -193,7 +204,7 @@ def main():
                     st.session_state.cal_year += 1
                 st.rerun()
 
-        # カレンダー描画
+        # カレンダー生成
         cal = calendar.monthcalendar(st.session_state.cal_year, st.session_state.cal_month)
         days = ["月", "火", "水", "木", "金", "土", "日"]
         cols = st.columns(7)
@@ -212,19 +223,23 @@ def main():
                     if cols[i].button(label, key=f"btn_{target_str}", use_container_width=True):
                         st.session_state.selected_cal_date = target_str
 
-        # 特定日の詳細表示
+        # 特定日の詳細表示（投資型・借金型を分けて表示）
         if st.session_state.selected_cal_date:
             st.divider()
             detail = user_records[user_records['date'] == st.session_state.selected_cal_date]
             if not detail.empty:
                 st.markdown(f"#### 📅 {st.session_state.selected_cal_date} の詳細")
                 st.write(f"**収支ポイント:** {detail.iloc[0]['points']:+g}")
-                st.write("**実施した項目:**")
-                raw_items = detail.iloc[0]['selected_items']
-                if pd.notna(raw_items) and str(raw_items) != "0":
-                    st.write(", ".join(str(raw_items).split(", ")))
-                else:
-                    st.write("記録された項目はありません。")
+                
+                det_c1, det_c2 = st.columns(2)
+                with det_c1:
+                    st.write("**🟢 投資型項目:**")
+                    inv_raw = detail.iloc[0].get('investment_items', "")
+                    st.write(inv_raw if pd.notna(inv_raw) and str(inv_raw) != "" else "なし")
+                with det_c2:
+                    st.write("**🔴 借金型項目:**")
+                    debt_raw = detail.iloc[0].get('debt_items', "")
+                    st.write(debt_raw if pd.notna(debt_raw) and str(debt_raw) != "" else "なし")
             else:
                 st.info(f"{st.session_state.selected_cal_date} のデータはありません。")
 
@@ -237,10 +252,9 @@ def main():
             if not user_records.empty:
                 st.markdown("#### 📋 全登録データ一覧")
                 h_df = user_records.sort_values("date", ascending=False).copy()
-                h_df['日付'] = h_df['date']
                 st.dataframe(
-                    h_df[['日付', 'points', 'selected_items']].rename(
-                        columns={'points': '収支', 'selected_items': '選択項目'}
+                    h_df[['date', 'points', 'investment_items', 'debt_items']].rename(
+                        columns={'date': '日付', 'points': '収支', 'investment_items': '投資型項目', 'debt_items': '借金型項目'}
                     ),
                     hide_index=True,
                     use_container_width=True

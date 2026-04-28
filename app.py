@@ -49,7 +49,7 @@ def load_data_cached():
     except:
         return pd.DataFrame(columns=["real_name", "password", "nickname", "team", "date", "points", "total_points", "entry_date", "selected_items"])
 
-# --- 2. リスト・マスタ定義（脳科学理論に基づく項目） ---
+# --- 2. リスト・マスタ定義 ---
 INVESTMENT_ITEMS = [
     "料理", "掃除", "睡眠が8時間以上", "湯舟に入浴、サウナ", "朝10分前に出社",
     "身体を動かした（ウォーキング以上の負荷）", "健康的な食生活（栄養バランスが取れている）",
@@ -72,7 +72,6 @@ TEAM_OPTIONS = ["-- 選択してください --", "経営層", "第一システ�
 
 # --- 3. メイン処理 ---
 def main():
-    # タイトルとサブタイトルの指定反映
     st.title("Dopamine Tracker")
     st.subheader("今日の行動を記録して、脳の健康状態を可視化しましょう")
     
@@ -99,13 +98,13 @@ def main():
         return
 
     all_data = load_data_cached()
-    user_total_pts = all_data[all_data['real_name'] == saved_real_name]['points'].sum()
+    user_records = all_data[all_data['real_name'] == saved_real_name].copy()
+    user_total_pts = user_records['points'].sum()
 
     tab1, tab2, tab3 = st.tabs(["📊 今日の記録", "🏆 ランキング", "📈 マイデータ"])
 
     # --- タブ1: 記録 ---
     with tab1:
-        # 指定の挨拶文と累積ポイント表示
         st.write(f"### {saved_nickname}さんのこれまでのポイントは{user_total_pts:g}です")
         target_date = st.date_input("対象日（２日前まで修正可）", value=date.today(), min_value=date.today()-timedelta(days=2), max_value=date.today())
 
@@ -125,8 +124,6 @@ def main():
             n_inv, n_debt = len(sel_inv), len(sel_debt)
             inv_stars = "★" * min(n_inv, 10) + "☆" * max(0, 10 - n_inv)
             debt_stars = "★" * min(n_debt, 10) + "☆" * max(0, 10 - n_debt)
-            
-            # 指定のラベルロジック（xx個実施 / 10個以上実施）
             inv_label = f"{n_inv}個実施" if n_inv <= 10 else "10個以上実施"
             debt_label = f"{n_debt}個実施" if n_debt <= 10 else "10個以上実施"
 
@@ -148,7 +145,7 @@ def main():
                     current_all_data = conn.read(worksheet="Records", ttl="0s")
                     selected_items_str = ", ".join(sel_inv + sel_debt)
                     past_points = current_all_data[(current_all_data['real_name'] == saved_real_name) & (current_all_data['date'] != str(target_date))]['points'].sum()
-                    new_row = pd.DataFrame([{"real_name": saved_real_name, "password": make_hash(u_pass), "nickname": u_nickname, "team": saved_team, "date": str(target_date), "points": day_count, "total_points": past_points + day_count, "entry_date": str(date.today()), "selected_items": selected_items_str}])
+                    new_row = pd.DataFrame([{"real_name": saved_real_name, "password": make_hash(u_pass), "nickname": saved_nickname, "team": saved_team, "date": str(target_date), "points": day_count, "total_points": past_points + day_count, "entry_date": str(date.today()), "selected_items": selected_items_str}])
                     updated_df = pd.concat([current_all_data[~((current_all_data['real_name'] == saved_real_name) & (current_all_data['date'] == str(target_date)))], new_row]).reset_index(drop=True)
                     conn.update(worksheet="Records", data=updated_df)
                     st.cache_data.clear()
@@ -174,6 +171,8 @@ def main():
             st.session_state.cal_month = date.today().month
         if 'selected_cal_date' not in st.session_state:
             st.session_state.selected_cal_date = None
+        if 'show_all_history' not in st.session_state:
+            st.session_state.show_all_history = False
 
         # 月のナビゲーション
         nav_col1, nav_col2, nav_col3 = st.columns([1, 2, 1])
@@ -194,10 +193,8 @@ def main():
                     st.session_state.cal_year += 1
                 st.rerun()
 
-        # カレンダー生成
+        # カレンダー描画
         cal = calendar.monthcalendar(st.session_state.cal_year, st.session_state.cal_month)
-        user_records = all_data[all_data['real_name'] == saved_real_name]
-        
         days = ["月", "火", "水", "木", "金", "土", "日"]
         cols = st.columns(7)
         for i, d in enumerate(days):
@@ -215,24 +212,41 @@ def main():
                     if cols[i].button(label, key=f"btn_{target_str}", use_container_width=True):
                         st.session_state.selected_cal_date = target_str
 
-        # 詳細表示エリアのエラー対策修正
+        # 特定日の詳細表示
         if st.session_state.selected_cal_date:
             st.divider()
             detail = user_records[user_records['date'] == st.session_state.selected_cal_date]
             if not detail.empty:
                 st.markdown(f"#### 📅 {st.session_state.selected_cal_date} の詳細")
                 st.write(f"**収支ポイント:** {detail.iloc[0]['points']:+g}")
-                st.write(f"**実施した項目:**")
-                
-                # --- エラー回避：文字列に変換してから分割 ---
+                st.write("**実施した項目:**")
                 raw_items = detail.iloc[0]['selected_items']
                 if pd.notna(raw_items) and str(raw_items) != "0":
-                    items = str(raw_items).split(", ")
-                    st.write(", ".join(items))
+                    st.write(", ".join(str(raw_items).split(", ")))
                 else:
                     st.write("記録された項目はありません。")
             else:
                 st.info(f"{st.session_state.selected_cal_date} のデータはありません。")
+
+        # --- 全ての履歴表示ボタン ---
+        st.divider()
+        if st.button("全ての履歴を表示／非表示"):
+            st.session_state.show_all_history = not st.session_state.show_all_history
+
+        if st.session_state.show_all_history:
+            if not user_records.empty:
+                st.markdown("#### 📋 全登録データ一覧")
+                h_df = user_records.sort_values("date", ascending=False).copy()
+                h_df['日付'] = h_df['date']
+                st.dataframe(
+                    h_df[['日付', 'points', 'selected_items']].rename(
+                        columns={'points': '収支', 'selected_items': '選択項目'}
+                    ),
+                    hide_index=True,
+                    use_container_width=True
+                )
+            else:
+                st.info("データがまだありません。")
 
 if __name__ == "__main__":
     main()

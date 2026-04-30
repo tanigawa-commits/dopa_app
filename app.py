@@ -38,14 +38,14 @@ def clean_string_strictly(x):
     if s.lower() == "nan" or s == "" or s == "none": return ""
     return s
 
-# ID正規化関数
+# ID正規化
 def normalize_id_strictly(x):
     s = clean_string_strictly(x)
     if s == "": return ""
     try: return str(int(float(s))).zfill(4)
     except: return s.zfill(4)
 
-# データを読み込む関数
+# データ読み込み
 @st.cache_data(ttl=60)
 def load_data_cached(sheet_name):
     try:
@@ -54,7 +54,6 @@ def load_data_cached(sheet_name):
             if sheet_name == "UserMaster":
                 return pd.DataFrame(columns=["emp_id", "password_hash", "nickname"])
             return pd.DataFrame(columns=["real_name", "date", "points", "entry_date", "investment_items", "debt_items"])
-        
         df = df.astype(str)
         if sheet_name == "UserMaster":
             df["emp_id"] = df["emp_id"].apply(normalize_id_strictly)
@@ -71,13 +70,17 @@ def load_data_cached(sheet_name):
 INVESTMENT_ITEMS = ["料理", "掃除", "睡眠が8時間以上", "湯舟に入浴、サウナ", "朝10分前に出社", "身体を動かした", "健康的な食生活", "洗濯", "ニュースをみる", "学習", "読書", "創作", "音楽", "挨拶", "感謝", "家族との時間を過ごす", "植物を育てる", "ペットと触れ合う", "普段やらない事を挑戦"]
 DEBT_ITEMS = ["外食オンリー", "掃除なし", "睡眠不足", "シャワーのみ", "朝ギリギリ", "1日ゴロゴロ", "ギルティ食", "アルコール", "タバコ", "スマホ2h以上", "映像2h以上", "SNS2h以上", "ゲーム2h以上", "ソシャゲ起動", "ゲーム課金", "ギャンブル", "無駄な出費", "独り言", "倫理欠如"]
 
-# --- 2. メイン認証処理 ---
+# --- 2. メイン処理 ---
 def main():
+    # セッション状態の初期化
     if 'authenticated' not in st.session_state:
         st.session_state.authenticated = False
         st.session_state.current_user = None
     if 'last_logged_id' not in st.session_state:
         st.session_state.last_logged_id = ""
+    # 【重要】選択肢クリア用のバージョン管理
+    if 'form_version' not in st.session_state:
+        st.session_state.form_version = 0
 
     if not st.session_state.authenticated:
         st.title("🔒 Dopamine Tracker - 認証")
@@ -111,7 +114,6 @@ def main():
                                 current_m.at[idx, 'password_hash'] = str(make_hash(new_pw))
                                 current_m.at[idx, 'nickname'] = target_id_norm
                                 conn.update(worksheet="UserMaster", data=current_m.astype(str))
-                                
                                 st.session_state.last_logged_id = target_id_norm
                                 st.session_state.authenticated, st.session_state.current_user = True, target_id_norm
                                 st.cache_data.clear(); st.success("完了！"); time.sleep(1); st.rerun()
@@ -126,7 +128,7 @@ def main():
                             else: st.error("パスワードが違います。")
         st.stop()
 
-    # --- 認証済みデータ準備 ---
+    # --- 認証済み：データ準備 ---
     current_emp_id = st.session_state.current_user
     master_data = load_data_cached("UserMaster")
     user_info = master_data[master_data['emp_id'] == current_emp_id].iloc[0]
@@ -155,12 +157,15 @@ def main():
             st.divider()
             status_placeholder = st.empty()
             col_inv, col_debt = st.columns(2)
+            
+            # 【重要】keyに form_version を含めることで一括クリアを可能にする
+            v = st.session_state.form_version
             with col_inv:
                 st.markdown("#### 🟢 投資型")
-                sel_inv = [i for i in INVESTMENT_ITEMS if st.checkbox(i, key=f"inv_{i}")]
+                sel_inv = [i for i in INVESTMENT_ITEMS if st.checkbox(i, key=f"inv_{i}_{v}")]
             with col_debt:
                 st.markdown("#### 🔴 借金型")
-                sel_debt = [i for i in DEBT_ITEMS if st.checkbox(i, key=f"debt_{i}")]
+                sel_debt = [i for i in DEBT_ITEMS if st.checkbox(i, key=f"debt_{i}_{v}")]
             
             n_inv, n_debt = len(sel_inv), len(sel_debt)
             inv_stars = "★" * min(n_inv, 10) + "☆" * max(0, 10 - n_inv)
@@ -187,11 +192,8 @@ def main():
                     others = db[~((db['real_name'] == current_emp_id) & (db['date'] == str(target_date)))]
                     conn.update(worksheet="Records", data=pd.concat([others, new_row]).reset_index(drop=True).astype(str))
                     
-                    # --- 【修正】登録成功時にチェックボックスをクリアする処理 ---
-                    for item in INVESTMENT_ITEMS:
-                        st.session_state[f"inv_{item}"] = False
-                    for item in DEBT_ITEMS:
-                        st.session_state[f"debt_{item}"] = False
+                    # 【解決策】直接値を書き換えず、バージョンを上げて「リセット」する
+                    st.session_state.form_version += 1
                     
                     st.cache_data.clear(); st.balloons(); st.success("登録完了！"); time.sleep(1); st.rerun()
         record_ui()

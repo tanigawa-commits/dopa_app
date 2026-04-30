@@ -13,83 +13,73 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 # 【秘密の合言葉】
 SECRET_AUTH_CODE = "feelist2026" 
 
-# デザインCSS（カレンダーの列を強制的に35px幅に固定）
+# デザインCSS（カレンダーの「枠」自体を小さくして中央に寄せる）
 st.markdown("""
     <style>
-    /* 1. 記録画面：ステータスカード（PCで2列、星が綺麗に見えるように） */
+    /* ステータスカード（記録画面） */
     .status-card {
         border: 1px solid #e6e9ef; border-radius: 15px; padding: 15px; text-align: center;
-        background-color: white; margin-bottom: 10px;
+        background-color: white; margin-bottom: 10px; min-height: 120px;
     }
     .star-display { font-size: 26px; letter-spacing: 2px; margin: 5px 0; font-family: monospace; }
     .status-label { font-size: 16px; font-weight: bold; margin-bottom: 5px; }
     .status-count { font-size: 14px; color: #5e6064; }
 
-    /* 2. 【究極修正】カレンダーの「列」そのものを35pxに固定して中央に寄せる */
-    /* カレンダーボタン(keyにbtn_を含む)が入っている親要素(stHorizontalBlock)を特定 */
-    div[data-testid="stHorizontalBlock"]:has(button[key*="btn_"]) {
-        display: flex !important;
-        flex-direction: row !important;
-        justify-content: center !important; /* 中央に寄せる */
-        gap: 3px !important; /* 隙間を3pxに固定 */
-        flex-wrap: nowrap !important;
+    /* 【究極】カレンダー行(曜日ヘッダー含む)の幅を物理的に制限して中央寄せ */
+    div[data-testid="stHorizontalBlock"]:has(button[key*="btn_"]), 
+    div[data-testid="stHorizontalBlock"]:has(.cal-day-header) {
+        max-width: 260px !important;
+        margin: 0 auto !important;
+        gap: 2px !important;
     }
 
-    /* その中にある7つの列(column)を、画面幅に関わらず35px幅に固定 */
-    div[data-testid="stHorizontalBlock"]:has(button[key*="btn_"]) div[data-testid="column"] {
-        flex: 0 0 35px !important; /* 伸びるな、縮むな、35px固定 */
-        width: 35px !important;
+    /* 各カラムを35px幅に固定 */
+    div[data-testid="stHorizontalBlock"]:has(button[key*="btn_"]) div[data-testid="column"],
+    div[data-testid="stHorizontalBlock"]:has(.cal-day-header) div[data-testid="column"] {
+        flex: 0 0 35px !important;
         min-width: 35px !important;
+        max-width: 35px !important;
         padding: 0px !important;
-        margin: 0px !important;
     }
 
-    /* ボタン自体も35pxの正方形にする */
+    /* ボタンを正方形に近くし、余白をゼロにする */
     div[data-testid="stHorizontalBlock"] button[key*="btn_"] {
         padding: 0px !important;
-        margin: 0px !important;
         font-size: 11px !important;
         min-height: 35px !important;
         height: 35px !important;
         width: 35px !important;
         border-radius: 4px !important;
-        border: 1px solid #f0f2f6 !important;
-        line-height: 1 !important;
         display: flex !important;
         justify-content: center !important;
         align-items: center !important;
     }
     
-    .cal-day-header { text-align: center; font-weight: bold; font-size: 10px; color: #666; width: 35px; }
+    .cal-day-header { text-align: center; font-weight: bold; font-size: 11px; color: #666; width: 35px; }
     </style>
     """, unsafe_allow_html=True)
 
-# パスワード用ハッシュ関数
-def make_hash(password):
-    return hashlib.sha256(str.encode(password)).hexdigest()
+# ヘルパー関数群
+def make_hash(password): return hashlib.sha256(str.encode(password)).hexdigest()
 
-# 文字列クリーニング（.0 / None 徹底排除）
 def clean_string_strictly(x):
     s = str(x).strip()
     if '.' in s: s = s.split('.')[0]
     if s.lower() in ["nan", "none", "", "null"]: return ""
     return s
 
-# 表示用フォーマッタ（None対策）
 def display_format(val):
     if pd.isna(val): return "－"
     s = str(val).strip()
     if s.lower() in ["nan", "none", "", "null"]: return "－"
     return s
 
-# ID正規化（4桁0埋め）
 def normalize_id_strictly(x):
     s = clean_string_strictly(x)
     if s == "": return ""
     try: return str(int(float(s))).zfill(4)
     except: return s.zfill(4)
 
-# データ読み込み
 @st.cache_data(ttl=60)
 def load_data_cached(sheet_name):
     try:
@@ -145,7 +135,6 @@ def main():
                                 conn.update(worksheet="UserMaster", data=cm.astype(str))
                                 st.session_state.authenticated, st.session_state.current_user = True, target_id_norm
                                 st.cache_data.clear(); st.rerun()
-                            else: st.error("入力ミス")
                 else:
                     with st.form("login"):
                         ip = st.text_input("パスワード", type="password")
@@ -186,12 +175,11 @@ def main():
             
             n_inv, n_debt = len(sel_inv), len(sel_debt)
             inv_s, debt_s = "★" * min(n_inv, 10) + "☆" * max(0, 10 - n_inv), "★" * min(n_debt, 10) + "☆" * max(0, 10 - n_debt)
-            inv_l, debt_l = (f"{n_inv}個実施！" if n_inv <= 10 else "10個以上実施！"), (f"{n_debt}個実施！" if n_debt <= 10 else "10個以上実施！")
             
             with status_p.container():
                 sc1, sc2 = st.columns(2)
-                with sc1: st.markdown(f"""<div class="status-card"><div class="status-label" style="color:#0066cc;">投資型</div><div class="star-display" style="color:#00cc99;">{inv_s}</div><div class="status-count">{inv_l}</div></div>""", unsafe_allow_html=True)
-                with sc2: st.markdown(f"""<div class="status-card"><div class="status-label" style="color:#cc3333;">借金型</div><div class="star-display" style="color:#ff4b4b;">{debt_s}</div><div class="status-count">{debt_l}</div></div>""", unsafe_allow_html=True)
+                with sc1: st.markdown(f"""<div class="status-card"><div class="status-label" style="color:#0066cc;">投資型</div><div class="star-display" style="color:#00cc99;">{inv_s}</div><div class="status-count">{n_inv}個実施！</div></div>""", unsafe_allow_html=True)
+                with sc2: st.markdown(f"""<div class="status-card"><div class="status-label" style="color:#cc3333;">借金型</div><div class="star-display" style="color:#ff4b4b;">{debt_s}</div><div class="status-count">{n_debt}個実施！</div></div>""", unsafe_allow_html=True)
             
             day_pts = n_inv - n_debt
             st.metric("本日のポイント", f"{day_pts:+d}")
@@ -205,10 +193,12 @@ def main():
                 st.cache_data.clear(); st.balloons(); st.rerun()
         record_ui()
 
-    # --- マイデータ（カレンダー幅・強制固定） ---
+    # --- マイデータ（究極凝縮カレンダー） ---
     with tab3:
         st.subheader("🗓 カレンダー履歴")
         if 'cal_y' not in st.session_state: st.session_state.cal_y, st.session_state.cal_m = date.today().year, date.today().month
+        
+        # 月移動ボタンのレイアウト
         c1, c2, c3 = st.columns([1, 2, 1])
         with c1: 
             if st.button("⬅️", key="prev"):
@@ -222,20 +212,21 @@ def main():
                 if st.session_state.cal_m == 13: st.session_state.cal_m, st.session_state.cal_y = 1, st.session_state.cal_y + 1
                 st.rerun()
         
+        # 曜日ヘッダー
         cal = calendar.monthcalendar(st.session_state.cal_y, st.session_state.cal_m)
         days_names = ["月", "火", "水", "木", "金", "土", "日"]
         cols_h = st.columns(7)
         for i, d in enumerate(days_names): cols_h[i].markdown(f"<div class='cal-day-header'>{d}</div>", unsafe_allow_html=True)
         
+        # 日付ボタン
         recorded_dates = user_records['date'].unique().tolist() if not user_records.empty else []
         for week in cal:
-            cols = st.columns(7) # 7列生成
+            cols = st.columns(7)
             for i, day in enumerate(week):
                 if day != 0:
                     t_str = f"{st.session_state.cal_y}-{st.session_state.cal_m:02d}-{day:02d}"
                     has_d = t_str in recorded_dates
                     btn_label = f"{day}🔵" if has_d else f"{day}"
-                    # ボタンのkeyに'btn_'を含めることでCSSのターゲットにする
                     if cols[i].button(btn_label, key=f"btn_{t_str}", disabled=not has_d):
                         st.session_state.sel_d = t_str
         
@@ -260,7 +251,7 @@ def main():
             sum_df = sum_df.merge(master_data[['emp_id', 'nickname']], left_on='real_name', right_on='emp_id', how='left')
             sum_df['名'] = sum_df['nickname'].apply(clean_string_strictly).replace('', None).fillna(sum_df['real_name'])
             sum_df["順位"] = sum_df["points"].rank(ascending=False, method='min').astype(int)
-            st.dataframe(sum_df.sort_values("順位")[["順位", "名", "points"]], use_container_width=True, hide_index=True, column_config={"順位": st.column_config.NumberColumn(alignment="left"), "points": st.column_config.NumberColumn("累計", format="%d", alignment="left")})
+            st.dataframe(sum_df.sort_values("順位")[["順位", "名", "points"]], use_container_width=True, hide_index=True, column_config={"points": st.column_config.NumberColumn("累計", format="%d", alignment="left")})
 
 if __name__ == "__main__":
     main()

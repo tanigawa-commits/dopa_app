@@ -65,7 +65,6 @@ def load_data_cached(sheet_name):
             df["nickname"] = df["nickname"].apply(clean_string_strictly)
         else:
             df["real_name"] = df["real_name"].apply(normalize_id_strictly)
-            # 【重要】ポイント列からも小数点以降を徹底排除
             if "points" in df.columns:
                 df["points"] = df["points"].apply(clean_string_strictly)
         return df
@@ -78,13 +77,19 @@ DEBT_ITEMS = ["外食オンリー", "掃除なし", "睡眠不足", "シャワ�
 
 # --- 2. メイン認証処理 ---
 def main():
+    # セッション状態の初期化
     if 'authenticated' not in st.session_state:
         st.session_state.authenticated = False
         st.session_state.current_user = None
+    if 'last_logged_id' not in st.session_state:
+        st.session_state.last_logged_id = ""
 
+    # --- 認証画面 ---
     if not st.session_state.authenticated:
         st.title("🔒 Dopamine Tracker - 認証")
-        target_id = st.text_input("社員番号(4桁)", max_chars=4, key="login_id")
+        
+        # 【機能追加】valueにst.session_state.last_logged_idを指定してデフォルト表示
+        target_id = st.text_input("社員番号(4桁)", value=st.session_state.last_logged_id, max_chars=4, key="login_id_input")
         
         if target_id:
             master = load_data_cached("UserMaster")
@@ -114,6 +119,8 @@ def main():
                                 current_m.at[idx, 'password_hash'] = str(make_hash(new_pw))
                                 current_m.at[idx, 'nickname'] = target_id_norm
                                 conn.update(worksheet="UserMaster", data=current_m.astype(str))
+                                
+                                st.session_state.last_logged_id = target_id_norm # IDを保存
                                 st.session_state.authenticated, st.session_state.current_user = True, target_id_norm
                                 st.cache_data.clear(); st.success("完了！"); time.sleep(1); st.rerun()
                 else:
@@ -121,6 +128,7 @@ def main():
                         input_pw = st.text_input("パスワード", type="password")
                         if st.form_submit_button("ログイン"):
                             if make_hash(input_pw) == stored_hash:
+                                st.session_state.last_logged_id = target_id_norm # IDを保存
                                 st.session_state.authenticated, st.session_state.current_user = True, target_id_norm
                                 st.cache_data.clear(); st.rerun()
                             else: st.error("パスワードが違います。")
@@ -140,13 +148,13 @@ def main():
         st.write(f"ログイン: **{current_nickname}**")
         if st.button("ログアウト"):
             st.session_state.authenticated = False
+            # ここでは last_logged_id は消さないので、認証画面でデフォルト表示される
             st.rerun()
 
     tab1, tab2, tab3, tab4 = st.tabs(["今日の記録", "ランキング", "マイデータ", "設定"])
 
     # --- タブ1: 今日の記録 ---
     with tab1:
-        # 累計ポイント表示でも小数点が出ないよう :g フォーマットを使用
         pts_series = pd.to_numeric(user_records['points'], errors='coerce').fillna(0)
         st.write(f"### {current_nickname}さんの累計ポイント: {pts_series.sum():g}")
         target_date = st.date_input("対象日（７日前まで遡れます）", value=date.today(), min_value=date.today()-timedelta(days=7), max_value=date.today())
@@ -202,11 +210,13 @@ def main():
             summary = summary.rename(columns={"points": "ポイント累計"})
             summary["順位"] = summary["ポイント累計"].rank(ascending=False, method='min').astype(int)
             summary = summary.sort_values("順位").reset_index(drop=True)
-            # 数値表示の設定(format="%d")で、ランキング表も小数点を排除
+            
+            # 【修正】全項目（順位、表示名、ポイント累計）を左寄せに設定
             st.dataframe(summary[["順位", "表示名", "ポイント累計"]], use_container_width=True, hide_index=True,
                          column_config={
                              "順位": st.column_config.NumberColumn(alignment="left"),
-                             "ポイント累計": st.column_config.NumberColumn(format="%d")
+                             "表示名": st.column_config.TextColumn(alignment="left"),
+                             "ポイント累計": st.column_config.NumberColumn(alignment="left", format="%d")
                          })
 
     # --- タブ3: マイデータ ---
@@ -245,24 +255,20 @@ def main():
             det = user_records[user_records['date'] == st.session_state.sel_d]
             if not det.empty:
                 st.markdown(f"#### 📅 {st.session_state.sel_d}")
-                # カレンダー下の詳細表示もgフォーマットで小数点を排除
                 st.write(f"**獲得:** {pd.to_numeric(det.iloc[0]['points'], errors='coerce'):+g}")
                 st.write("**🟢 投資型:**", det.iloc[0].get('investment_items', ""))
                 st.write("**🔴 借金型:**", det.iloc[0].get('debt_items', ""))
 
-        # 【問題の箇所：全履歴を表示するセクション】
         st.divider()
         with st.expander("📝 これまでの全履歴を表示する"):
             if not user_records.empty:
                 history_df = user_records.sort_values("date", ascending=False).copy()
-                # 【修正】ポイント列を強制的に数値化し、整数(int)として扱うよう再定義
                 history_df["points"] = pd.to_numeric(history_df["points"], errors="coerce").fillna(0).astype(int)
-                
                 st.dataframe(history_df[["date", "points", "investment_items", "debt_items"]], 
                              use_container_width=True, hide_index=True,
                              column_config={
                                  "date": "日付", 
-                                 "points": st.column_config.NumberColumn("ポイント", format="%d"), # 表示書式でも整数を強制
+                                 "points": st.column_config.NumberColumn("ポイント", format="%d", alignment="left"),
                                  "investment_items": "投資項目", 
                                  "debt_items": "借金項目"
                              })

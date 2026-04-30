@@ -35,7 +35,8 @@ def make_hash(password):
 @st.cache_data(ttl=60)
 def load_data_cached():
     try:
-        return conn.read(worksheet="Records", ttl="1m")
+        df = conn.read(worksheet="Records", ttl="1m")
+        return df
     except:
         return pd.DataFrame(columns=["real_name", "password", "nickname", "team", "date", "points", "total_points", "entry_date", "investment_items", "debt_items"])
 
@@ -72,26 +73,27 @@ def main():
         
         if st.button("認証"):
             if not u_emp_id or not u_pass:
-                st.error("入力を確認してください。")
+                st.error("社員番号とパスワードを入力してください。")
             else:
                 st.query_params.update(eid=u_emp_id)
                 st.rerun()
 
     if not (saved_emp_id and u_pass):
-        st.warning("左側のサイドバーで認証してください。")
+        st.warning("左側のサイドバーで社員番号とパスワードを入力し、認証ボタンを押してください。")
         return
 
+    # 全データの取得
     all_data = load_data_cached()
     
-    # 社員番号ごとの「最新の有効なニックネーム」対応表を全データから作成
-    # ニックネームが入力されており、かつ社員番号そのものではないものを探す
+    # 社員番号ごとの「最新の有効なニックネーム」辞書を作成
     latest_nicks = {}
     if not all_data.empty:
         rdf_sorted = all_data.sort_values("entry_date", ascending=True)
         for _, row in rdf_sorted.iterrows():
             eid = str(row['real_name'])
             nick = str(row['nickname'])
-            if nick.strip() != "" and nick != eid and nick != "nan":
+            # 社員番号そのものや空、nan、0などを除外して有効な名前を保持
+            if nick.strip() != "" and nick != eid and nick != "nan" and nick != "0":
                 latest_nicks[eid] = nick
 
     # ログインユーザーの表示名特定
@@ -108,6 +110,7 @@ def main():
     with tab1:
         st.write(f"### {current_nickname}さんのこれまでのポイントは {user_total_pts:g} です")
         
+        # 7日前まで遡れる設定
         target_date = st.date_input("対象日（７日前まで遡って登録、修正が出来ます）", 
                                      value=date.today(), 
                                      min_value=date.today()-timedelta(days=7), 
@@ -172,13 +175,18 @@ def main():
             rdf = all_data.copy()
             rdf["points"] = pd.to_numeric(rdf["points"], errors='coerce').fillna(0)
             
-            # 社員番号を表示名（最新ニックネーム、なければ社員番号）に変換
+            # 社員番号を表示名（ニックネーム）にマッピング
             rdf["表示名"] = rdf["real_name"].astype(str).map(lambda x: latest_nicks.get(x, x))
             
-            # 表示名でグループ化して集計（社員番号は出さない）
+            # 集計
             summary = rdf.groupby("表示名")["points"].sum().reset_index()
             summary = summary.rename(columns={"points": "累計収支", "表示名": "ニックネーム"})
-            st.dataframe(summary.sort_values("累計収支", ascending=False), use_container_width=True, hide_index=True)
+            
+            # 高い順にソートし、順位列を追加
+            summary = summary.sort_values("累計収支", ascending=False).reset_index(drop=True)
+            summary.insert(0, "順位", summary.index + 1)
+            
+            st.dataframe(summary, use_container_width=True, hide_index=True)
 
     # --- タブ3: マイデータ ---
     with tab3:
@@ -231,22 +239,17 @@ def main():
     # --- タブ4: 設定 ---
     with tab4:
         st.subheader("⚙️ ユーザー設定")
-        st.info(f"ログイン中の社員番号: {saved_emp_id}")
-        
-        # 初期値に現在のニックネームをセット
+        st.info(f"社員番号: {saved_emp_id}")
         new_nick = st.text_input("ニックネームの登録・変更", value=current_nickname if current_nickname != str(saved_emp_id) else "")
         
         if st.button("設定を保存"):
             if new_nick.strip():
-                with st.spinner("更新中..."):
+                with st.spinner("保存中..."):
                     current_all_data = conn.read(worksheet="Records", ttl="0s")
-                    
-                    # ユーザーの既存レコードがあれば全てニックネームを書き換える（一貫性のため）
                     mask = current_all_data['real_name'].astype(str) == str(saved_emp_id)
                     if mask.any():
                         current_all_data.loc[mask, 'nickname'] = new_nick
                     else:
-                        # 初めての利用者の場合、初期行を追加
                         new_entry = pd.DataFrame([{
                             "real_name": saved_emp_id, "password": make_hash(u_pass), "nickname": new_nick, 
                             "date": "SETTING", "points": 0, "total_points": 0, "entry_date": str(datetime.now()),
@@ -256,7 +259,7 @@ def main():
                     
                     conn.update(worksheet="Records", data=current_all_data)
                     st.cache_data.clear() 
-                    st.success("ニックネームを保存しました。反映には再読み込みが必要です。")
+                    st.success("設定を保存しました。反映には再読み込みが必要です。")
                     time.sleep(1)
                     st.rerun()
 

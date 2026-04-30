@@ -13,40 +13,17 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 # 【秘密の合言葉】
 SECRET_AUTH_CODE = "feelist2026" 
 
-# デザインCSS（星表示の復活 ＆ スマホでのカレンダー7列強制維持）
+# デザインCSS（標準的なレイアウトに戻しました）
 st.markdown("""
     <style>
-    /* ステータスカードのデザイン（復活） */
     .status-card {
         border: 1px solid #e6e9ef; border-radius: 15px; padding: 15px; text-align: center;
         box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05); background-color: white; margin-bottom: 10px;
     }
-    .star-display { font-size: 24px; letter-spacing: 2px; margin: 5px 0; font-family: monospace; }
+    .star-display { font-size: 26px; letter-spacing: 2px; margin: 5px 0; font-family: monospace; }
     .status-label { font-size: 16px; font-weight: bold; margin-bottom: 5px; }
     .status-count { font-size: 14px; color: #5e6064; }
-    
-    /* カレンダーヘッダー */
-    .cal-day-header { text-align: center; font-weight: bold; padding: 5px 0; border-bottom: 1px solid #eee; font-size: 12px; }
-
-    /* 【スマホ対策】 st.columns(7) が縦に並ぶのを強制的に阻止して横7列にする */
-    [data-testid="stHorizontalBlock"] {
-        display: grid !important;
-        grid-template-columns: repeat(7, 1fr) !important;
-        gap: 2px !important;
-    }
-    [data-testid="stHorizontalBlock"] > [data-testid="column"] {
-        width: 100% !important;
-        max-width: 100% !important;
-        flex-basis: unset !important;
-    }
-    
-    /* ボタンの余白を削ってスマホの横幅に収める */
-    div.stButton > button {
-        width: 100%;
-        padding: 4px 0px !important;
-        font-size: 11px !important;
-        min-height: 40px !important;
-    }
+    .cal-day-header { text-align: center; font-weight: bold; padding: 5px; border-bottom: 1px solid #eee; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -54,18 +31,19 @@ st.markdown("""
 def make_hash(password):
     return hashlib.sha256(str.encode(password)).hexdigest()
 
-# 文字列クリーニング
+# 文字列クリーニング（.0を徹底排除）
 def clean_string_strictly(x):
     s = str(x).strip()
     if '.' in s: s = s.split('.')[0]
     if s.lower() in ["nan", "none", "", "none"]: return ""
     return s
 
-# 表示用フォーマッタ（Noneやnanを全角ハイフンにする）
+# 表示用フォーマッタ（空なら全角ハイフンにする）
 def display_format(val):
     if pd.isna(val): return "－"
     s = str(val).strip()
-    if s.lower() in ["nan", "none", "", "null", "undefined"]: return "－"
+    if s.lower() in ["nan", "none", "", "null", "undefined"]:
+        return "－"
     return s
 
 # ID正規化
@@ -81,7 +59,8 @@ def load_data_cached(sheet_name):
     try:
         df = conn.read(worksheet=sheet_name, ttl="1m")
         if df.empty:
-            if sheet_name == "UserMaster": return pd.DataFrame(columns=["emp_id", "password_hash", "nickname"])
+            if sheet_name == "UserMaster":
+                return pd.DataFrame(columns=["emp_id", "password_hash", "nickname"])
             return pd.DataFrame(columns=["real_name", "date", "points", "entry_date", "investment_items", "debt_items"])
         df = df.astype(str)
         if sheet_name == "UserMaster":
@@ -89,9 +68,11 @@ def load_data_cached(sheet_name):
             df["nickname"] = df["nickname"].apply(clean_string_strictly)
         else:
             df["real_name"] = df["real_name"].apply(normalize_id_strictly)
-            if "points" in df.columns: df["points"] = df["points"].apply(clean_string_strictly)
+            if "points" in df.columns:
+                df["points"] = df["points"].apply(clean_string_strictly)
         return df
-    except: return pd.DataFrame()
+    except:
+        return pd.DataFrame()
 
 # 項目リスト
 INVESTMENT_ITEMS = ["料理", "掃除", "睡眠が8時間以上", "湯舟に入浴、サウナ", "朝10分前に出社", "身体を動かした", "健康的な食生活", "洗濯", "ニュースをみる", "学習", "読書", "創作", "音楽", "挨拶", "感謝", "家族との時間を過ごす", "植物を育てる", "ペットと触れ合う", "普段やらない事を挑戦"]
@@ -107,49 +88,53 @@ def main():
     if 'form_version' not in st.session_state:
         st.session_state.form_version = 0
 
-    # 認証画面
     if not st.session_state.authenticated:
-        st.title("🔒 Dopamine Tracker")
+        st.title("🔒 Dopamine Tracker - 認証")
         target_id = st.text_input("社員番号(4桁)", value=st.session_state.last_logged_id, max_chars=4, key="login_id_input")
+        
         if target_id:
             master = load_data_cached("UserMaster")
             target_id_norm = normalize_id_strictly(target_id)
             user_row = master[master['emp_id'] == target_id_norm]
+
             if user_row.empty:
-                st.error("未登録の社員番号です。")
+                st.error(f"社員番号「{target_id}」は許可されていません。")
             else:
                 val = user_row.iloc[0].get('password_hash', "")
                 stored_hash = str(val) if pd.notna(val) and str(val).lower() != "nan" and str(val).strip() != "" else None
+                
                 if not stored_hash:
-                    st.warning("⚠️ パスワード設定")
-                    with st.form("init_reg"):
-                        ac = st.text_input("秘密の合言葉", type="password")
-                        np = st.text_input("パスワード", type="password")
-                        npc = st.text_input("確認", type="password")
-                        if st.form_submit_button("登録"):
-                            if ac != SECRET_AUTH_CODE: st.error("合言葉違い")
-                            elif np != npc: st.error("不一致")
+                    st.warning("⚠️ パスワード設定が必要です。")
+                    with st.form("init_reg_form"):
+                        auth_code = st.text_input("秘密の合言葉", type="password")
+                        new_pw = st.text_input("パスワード", type="password")
+                        new_pw_confirm = st.text_input("パスワード(確認)", type="password")
+                        if st.form_submit_button("登録してログイン"):
+                            if auth_code != SECRET_AUTH_CODE: st.error("合言葉が違います。")
+                            elif new_pw != new_pw_confirm: st.error("不一致です。")
+                            elif len(new_pw) < 4: st.error("4文字以上で設定してください。")
                             else:
-                                cm = conn.read(worksheet="UserMaster", ttl="0s").astype(str)
-                                cm['emp_id'] = cm['emp_id'].apply(normalize_id_strictly)
-                                idx = cm[cm['emp_id'] == target_id_norm].index[0]
-                                cm.at[idx, 'password_hash'] = str(make_hash(np))
-                                cm.at[idx, 'nickname'] = target_id_norm
-                                conn.update(worksheet="UserMaster", data=cm.astype(str))
+                                current_m = conn.read(worksheet="UserMaster", ttl="0s").astype(str)
+                                current_m['emp_id'] = current_m['emp_id'].apply(normalize_id_strictly)
+                                idx = current_m[current_m['emp_id'] == target_id_norm].index[0]
+                                current_m.at[idx, 'password_hash'] = str(make_hash(new_pw))
+                                current_m.at[idx, 'nickname'] = target_id_norm
+                                conn.update(worksheet="UserMaster", data=current_m.astype(str))
                                 st.session_state.last_logged_id = target_id_norm
                                 st.session_state.authenticated, st.session_state.current_user = True, target_id_norm
-                                st.cache_data.clear(); st.rerun()
+                                st.cache_data.clear(); st.success("完了！"); time.sleep(1); st.rerun()
                 else:
-                    with st.form("login"):
-                        ip = st.text_input("パスワード", type="password")
+                    with st.form("normal_login_form"):
+                        input_pw = st.text_input("パスワード", type="password")
                         if st.form_submit_button("ログイン"):
-                            if make_hash(ip) == stored_hash:
+                            if make_hash(input_pw) == stored_hash:
                                 st.session_state.last_logged_id = target_id_norm
                                 st.session_state.authenticated, st.session_state.current_user = True, target_id_norm
                                 st.cache_data.clear(); st.rerun()
-                            else: st.error("違い")
+                            else: st.error("パスワードが違います。")
         st.stop()
 
+    # --- 認証済みデータ準備 ---
     current_emp_id = st.session_state.current_user
     master_data = load_data_cached("UserMaster")
     user_info = master_data[master_data['emp_id'] == current_emp_id].iloc[0]
@@ -158,9 +143,16 @@ def main():
     all_records = load_data_cached("Records")
     user_records = all_records[all_records['real_name'] == current_emp_id].copy()
 
+    st.title("📊 Dopamine Tracker")
+    with st.sidebar:
+        st.write(f"ログイン: **{current_nickname}**")
+        if st.button("ログアウト"):
+            st.session_state.authenticated = False
+            st.rerun()
+
     tab1, tab2, tab3, tab4 = st.tabs(["今日の記録", "ランキング", "マイデータ", "設定"])
 
-    # --- タブ1: 今日の記録（星表示・個数表示復活） ---
+    # --- タブ1: 今日の記録 ---
     with tab1:
         pts_series = pd.to_numeric(user_records['points'], errors='coerce').fillna(0)
         st.write(f"### {current_nickname}さんの累計ポイント: {pts_series.sum():g}")
@@ -179,7 +171,7 @@ def main():
                 st.markdown("#### 🔴 借金型")
                 sel_debt = [i for i in DEBT_ITEMS if st.checkbox(i, key=f"debt_{i}_{v}")]
             
-            # 星表示と個数ラベルのロジック復活
+            # 星表示と個数ラベルの復活
             n_inv, n_debt = len(sel_inv), len(sel_debt)
             inv_stars = "★" * min(n_inv, 10) + "☆" * max(0, 10 - n_inv)
             debt_stars = "★" * min(n_debt, 10) + "☆" * max(0, 10 - n_debt)
@@ -198,11 +190,14 @@ def main():
                 with st.spinner("送信中..."):
                     db = conn.read(worksheet="Records", ttl="0s").astype(str)
                     db['real_name'] = db['real_name'].apply(normalize_id_strictly)
-                    new_row = pd.DataFrame([{"real_name": current_emp_id, "date": str(target_date), "points": str(day_count), "entry_date": str(datetime.now()), "investment_items": ", ".join(sel_inv), "debt_items": ", ".join(sel_debt)}])
+                    new_row = pd.DataFrame([{
+                        "real_name": current_emp_id, "date": str(target_date), "points": str(day_count), 
+                        "entry_date": str(datetime.now()), "investment_items": ", ".join(sel_inv), "debt_items": ", ".join(sel_debt)
+                    }])
                     others = db[~((db['real_name'] == current_emp_id) & (db['date'] == str(target_date)))]
                     conn.update(worksheet="Records", data=pd.concat([others, new_row]).reset_index(drop=True).astype(str))
                     st.session_state.form_version += 1
-                    st.cache_data.clear(); st.balloons(); st.rerun()
+                    st.cache_data.clear(); st.balloons(); st.success("登録完了！"); time.sleep(1); st.rerun()
         record_ui()
 
     # --- タブ2: ランキング ---
@@ -216,9 +211,14 @@ def main():
             summary['表示名'] = summary['nickname'].apply(clean_string_strictly).replace('', None).fillna(summary['real_name'])
             summary = summary.rename(columns={"points": "累計"})
             summary["順位"] = summary["累計"].rank(ascending=False, method='min').astype(int)
-            st.dataframe(summary.sort_values("順位")[["順位", "表示名", "累計"]], use_container_width=True, hide_index=True, column_config={"順位": st.column_config.NumberColumn(alignment="left"), "表示名": st.column_config.TextColumn(alignment="left"), "累計": st.column_config.NumberColumn(alignment="left", format="%d")})
+            st.dataframe(summary.sort_values("順位")[["順位", "表示名", "累計"]], use_container_width=True, hide_index=True,
+                         column_config={
+                             "順位": st.column_config.NumberColumn(alignment="left"),
+                             "表示名": st.column_config.TextColumn(alignment="left"),
+                             "累計": st.column_config.NumberColumn(alignment="left", format="%d")
+                         })
 
-    # --- タブ3: マイデータ（スマホ列固定版） ---
+    # --- タブ3: マイデータ ---
     with tab3:
         st.subheader("🗓 カレンダー履歴")
         if 'cal_y' not in st.session_state: st.session_state.cal_y, st.session_state.cal_m = date.today().year, date.today().month
@@ -264,7 +264,8 @@ def main():
                 h_df = user_records.sort_values("date", ascending=False).copy()
                 h_df["points"] = pd.to_numeric(h_df["points"], errors="coerce").fillna(0).astype(int)
                 for c in ["investment_items", "debt_items"]: h_df[c] = h_df[c].apply(display_format)
-                st.dataframe(h_df[["date", "points", "investment_items", "debt_items"]], use_container_width=True, hide_index=True, column_config={"date": "日付", "points": st.column_config.NumberColumn("ポイント", format="%d", alignment="left")})
+                st.dataframe(h_df[["date", "points", "investment_items", "debt_items"]], use_container_width=True, hide_index=True, 
+                             column_config={"date": "日付", "points": st.column_config.NumberColumn("ポイント", format="%d", alignment="left")})
 
     # --- タブ4: 設定 ---
     with tab4:

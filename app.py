@@ -58,39 +58,44 @@ DEBT_ITEMS = [
 
 # --- 3. メイン認証・アプリ処理 ---
 def main():
-    # --- デバッグ用表示 ---
-    # 実際の中身を画面に出して確認します
-    st.write("Debug - User Context:", st.context.user)
-    
-    try:
-        login_email = st.context.user.email
-    except AttributeError:
-        login_email = getattr(st.user, 'email', None)
+    # --- 安全なメールアドレス取得ロジック ---
+    login_email = None
 
-    # もしここで login_email が None なら、以下のボタンを表示して
-    # ログインを促す仕組みを追加してみます
-    if not login_email:
-        st.error("Googleアカウント情報が取得できません。")
-        st.info("一度、右上のメニューなどからStreamlitにログインしているか確認してください。")
-        # 開発中のみ、自分のアドレスを一時的に代入して先に進む（検証用）
-        # login_email = "あなたのメールアドレス@feelist.co.jp"
-    st.title("Dopamine Tracker")
-    st.subheader("今日の行動を記録して、脳の健康状態を可視化しましょう")
+    # 1. 開発環境の確認（Streamlitバージョンを表示）
+    # st.write(f"Debug: Streamlit version is {st.__version__}")
 
-    # --- 認証セクション ---
-    # Streamlit CloudのPrivate設定時に有効。
+    # 2. 複数の取得方法を順番に試す（エラーを回避）
     try:
-        login_email = st.context.user.email
-    except AttributeError:
-        # 非公開設定でない場合やローカル環境でのフォールバック
-        login_email = getattr(st.user, 'email', None)
+        # 最新バージョン (1.34.0+)
+        if hasattr(st, "context") and hasattr(st.context, "user"):
+            login_email = st.context.user.email
+        # 中間バージョン
+        elif hasattr(st, "experimental_user"):
+            login_email = st.experimental_user.email
+        # 従来の方法
+        else:
+            login_email = getattr(st.user, "email", None)
+    except Exception as e:
+        # どの方法でも取得できない場合
+        login_email = None
+
+    # --- デバッグ表示（これで何が取れているか確定します） ---
+    # st.write(f"Debug - login_email: {login_email}")
 
     if not login_email:
         st.error("Googleアカウント情報が取得できません。")
-        st.info("💡 **設定確認:** Streamlit Cloudの管理画面でアプリを **'Private'** に変更し、自分を招待してください。")
-        # デバッグ用（テスト時のみコメントアウトを外す）
-        # login_email = "test-user@example.com" 
+        st.info("💡 **最終確認リスト:**")
+        st.markdown("""
+        1. **Private設定:** Streamlit CloudのManage app > Settings > Sharing が **'Only specific people...'** になっていますか？
+        2. **招待:** 設定画面の **Invite** に、今使っているメールアドレスを直接入力して追加しましたか？
+        3. **再ログイン:** 一度、Streamlit Cloud自体からログアウトして、社内アドレスでログインし直してみてください。
+        """)
+        
+        # 検証用に一時的に自分のアドレスを入れる場合はここ（テストが終わったら消す）
+        # login_email = "your-name@feelist.co.jp"
         return
+
+    # --- 以下、UserMasterとRecordsの処理 ---
 
     user_master = load_data_cached("UserMaster")
     all_records = load_data_cached("Records")

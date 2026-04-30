@@ -6,12 +6,14 @@ import hashlib
 import time
 import calendar
 
-# --- 1. アプリ設定 ---
+# --- 1. アプリ設定とセキュリティ設定 ---
 st.set_page_config(page_title="Dopamine Tracker", layout="wide")
 conn = st.connection("gsheets", type=GSheetsConnection)
 
+# 【秘密の合言葉】
 SECRET_AUTH_CODE = "feelist2026" 
 
+# デザインCSS
 st.markdown("""
     <style>
     .status-card {
@@ -25,34 +27,60 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
+# パスワード用ハッシュ関数
 def make_hash(password):
     return hashlib.sha256(str.encode(password)).hexdigest()
 
-def normalize_id(x):
-    s = str(x).replace('.0', '').strip()
-    if s.lower() == "nan" or s == "": return ""
-    try: return str(int(float(s))).zfill(4)
-    except: return s.zfill(4)
+# 文字列から「.」以降を完全に切り落とす、最強のクリーニング関数
+def clean_string_strictly(x):
+    s = str(x).strip()
+    # もし「2171.0」や「2171.」のようにピリオドが含まれていたら、ピリオド前までを抽出
+    if '.' in s:
+        s = s.split('.')[0]
+    # 空文字やシステム上の欠損値表示(nan)は空にする
+    if s.lower() == "nan" or s == "" or s == "none":
+        return ""
+    return s
 
+# ID正規化関数（4桁0埋め＋小数点強制排除）
+def normalize_id_strictly(x):
+    s = clean_string_strictly(x)
+    if s == "": return ""
+    # 数値化して0埋め（文字列ベースで処理）
+    try:
+        # floatにしてからintにすることで "2171.0" も "2171" として扱えるようにする
+        return str(int(float(s))).zfill(4)
+    except:
+        # 数字でない場合（文字混じり）は、そのまま4桁0埋め
+        return s.zfill(4)
+
+# データを読み込む関数
 @st.cache_data(ttl=60)
 def load_data_cached(sheet_name):
     try:
         df = conn.read(worksheet=sheet_name, ttl="1m")
         if df.empty:
-            if sheet_name == "UserMaster": return pd.DataFrame(columns=["emp_id", "password_hash", "nickname"])
+            if sheet_name == "UserMaster":
+                return pd.DataFrame(columns=["emp_id", "password_hash", "nickname"])
             return pd.DataFrame(columns=["real_name", "date", "points", "entry_date", "investment_items", "debt_items"])
         
+        # 読み込んだ瞬間に全データを文字列にし、IDと名前を徹底クリーニング
         df = df.astype(str)
-        if sheet_name == "UserMaster": df["emp_id"] = df["emp_id"].apply(normalize_id)
-        else: df["real_name"] = df["real_name"].apply(normalize_id)
+        if sheet_name == "UserMaster":
+            df["emp_id"] = df["emp_id"].apply(normalize_id_strictly)
+            df["nickname"] = df["nickname"].apply(clean_string_strictly)
+        else:
+            df["real_name"] = df["real_name"].apply(normalize_id_strictly)
+            
         return df
     except:
         return pd.DataFrame()
 
+# 項目リスト
 INVESTMENT_ITEMS = ["料理", "掃除", "睡眠が8時間以上", "湯舟に入浴、サウナ", "朝10分前に出社", "身体を動かした", "健康的な食生活", "洗濯", "ニュースをみる", "学習", "読書", "創作", "音楽", "挨拶", "感謝", "家族との時間", "植物", "ペット", "新しい挑戦"]
 DEBT_ITEMS = ["外食オンリー", "掃除なし", "睡眠不足", "シャワーのみ", "朝ギリギリ", "1日ゴロゴロ", "ギルティ食", "アルコール", "タバコ", "スマホ2h以上", "映像2h以上", "SNS2h以上", "ゲーム2h以上", "ソシャゲ起動", "ゲーム課金", "ギャンブル", "無駄な出費", "独り言", "倫理欠如"]
 
-# --- 2. メイン認証 ---
+# --- 2. メイン認証処理 ---
 def main():
     if 'authenticated' not in st.session_state:
         st.session_state.authenticated = False
@@ -64,7 +92,7 @@ def main():
         
         if target_id:
             master = load_data_cached("UserMaster")
-            target_id_norm = normalize_id(target_id)
+            target_id_norm = normalize_id_strictly(target_id)
             user_row = master[master['emp_id'] == target_id_norm]
 
             if user_row.empty:
@@ -74,7 +102,7 @@ def main():
                 stored_hash = str(val) if pd.notna(val) and str(val).lower() != "nan" and str(val).strip() != "" else None
                 
                 if not stored_hash:
-                    st.warning("⚠️ パスワード未設定です。初回認証を行ってください。")
+                    st.warning("⚠️ 初回ログイン：パスワード設定が必要です。")
                     with st.form("init_reg_form"):
                         auth_code = st.text_input("秘密の合言葉", type="password")
                         new_pw = st.text_input("設定するパスワード", type="password")
@@ -84,12 +112,18 @@ def main():
                             elif new_pw != new_pw_confirm: st.error("パスワードが不一致です。")
                             elif len(new_pw) < 4: st.error("4文字以上で設定してください。")
                             else:
+                                # 更新用マスタを0秒キャッシュで読み込み
                                 current_m = conn.read(worksheet="UserMaster", ttl="0s").astype(str)
-                                current_m['emp_id'] = current_m['emp_id'].apply(normalize_id)
+                                current_m['emp_id'] = current_m['emp_id'].apply(normalize_id_strictly)
                                 idx = current_m[current_m['emp_id'] == target_id_norm].index[0]
+                                
+                                # 値を保存（この時点で .0 は除去されている）
                                 current_m.at[idx, 'password_hash'] = str(make_hash(new_pw))
                                 current_m.at[idx, 'nickname'] = target_id_norm
+                                
+                                # 更新（絶対に数値化させないよう文字列固定で上書き）
                                 conn.update(worksheet="UserMaster", data=current_m.astype(str))
+                                
                                 st.session_state.authenticated, st.session_state.current_user = True, target_id_norm
                                 st.cache_data.clear(); st.success("登録完了！"); time.sleep(1); st.rerun()
                 else:
@@ -102,11 +136,14 @@ def main():
                             else: st.error("パスワードが違います。")
         st.stop()
 
-    # --- 認証済み：データ準備 ---
+    # --- 認証済み：データの準備 ---
     current_emp_id = st.session_state.current_user
     master_data = load_data_cached("UserMaster")
     user_info = master_data[master_data['emp_id'] == current_emp_id].iloc[0]
-    current_nickname = user_info['nickname'] if pd.notna(user_info['nickname']) and str(user_info['nickname']) != "nan" else current_emp_id
+    
+    # 画面表示用の名前（nicknameが空なら社員番号を使用、.0は強制除去）
+    raw_nick = user_info['nickname']
+    current_nickname = clean_string_strictly(raw_nick) if raw_nick and str(raw_nick) != "" else current_emp_id
 
     all_records = load_data_cached("Records")
     user_records = all_records[all_records['real_name'] == current_emp_id].copy()
@@ -123,6 +160,7 @@ def main():
     # --- タブ1: 今日の記録 ---
     with tab1:
         pts_series = pd.to_numeric(user_records['points'], errors='coerce').fillna(0)
+        # 【修正箇所】ここの表示で .0 が出ないよう、current_nickname を使用
         st.write(f"### {current_nickname}さんの累計ポイント: {pts_series.sum():g}")
         target_date = st.date_input("対象日（７日前まで遡って登録、修正が出来ます）", value=date.today(), min_value=date.today()-timedelta(days=7), max_value=date.today())
 
@@ -139,8 +177,7 @@ def main():
                 sel_debt = [i for i in DEBT_ITEMS if st.checkbox(i, key=f"debt_{i}")]
             
             n_inv, n_debt = len(sel_inv), len(sel_debt)
-            inv_stars = "★" * min(n_inv, 10) + "☆" * max(0, 10 - n_inv)
-            debt_stars = "★" * min(n_debt, 10) + "☆" * max(0, 10 - n_debt)
+            inv_stars = "★" * min(n_inv, 10) + "☆" * max(0, 10 - n_inv); debt_stars = "★" * min(n_debt, 10) + "☆" * max(0, 10 - n_debt)
             
             with status_placeholder.container():
                 sc1, sc2 = st.columns(2)
@@ -153,15 +190,13 @@ def main():
             if st.button("登録する", type="primary"):
                 with st.spinner("送信中..."):
                     db = conn.read(worksheet="Records", ttl="0s").astype(str)
-                    db['real_name'] = db['real_name'].apply(normalize_id)
-                    # RecordsへのNickname保存を廃止（real_name=IDのみで管理）
+                    db['real_name'] = db['real_name'].apply(normalize_id_strictly)
                     new_row = pd.DataFrame([{
                         "real_name": current_emp_id, 
                         "date": str(target_date), 
                         "points": str(day_count), 
                         "entry_date": str(datetime.now()), 
-                        "investment_items": ", ".join(sel_inv), 
-                        "debt_items": ", ".join(sel_debt)
+                        "investment_items": ", ".join(sel_inv), "debt_items": ", ".join(sel_debt)
                     }])
                     others = db[~((db['real_name'] == current_emp_id) & (db['date'] == str(target_date)))]
                     conn.update(worksheet="Records", data=pd.concat([others, new_row]).reset_index(drop=True).astype(str))
@@ -175,9 +210,9 @@ def main():
             rdf = all_records.copy()
             rdf["points"] = pd.to_numeric(rdf["points"], errors='coerce').fillna(0)
             summary = rdf.groupby("real_name")["points"].sum().reset_index()
-            # 表示直前にUserMasterから最新のニックネームを結合
             summary = summary.merge(master_data[['emp_id', 'nickname']], left_on='real_name', right_on='emp_id', how='left')
-            summary['表示名'] = summary['nickname'].fillna(summary['real_name'])
+            # ランキングの表示名からも徹底的に .0 を除去
+            summary['表示名'] = summary['nickname'].apply(clean_string_strictly).replace('', None).fillna(summary['real_name'])
             summary = summary.rename(columns={"points": "ポイント累計"})
             summary["順位"] = summary["ポイント累計"].rank(ascending=False, method='min').astype(int)
             summary = summary.sort_values("順位").reset_index(drop=True)
@@ -226,7 +261,7 @@ def main():
         edit_pw = st.text_input("パスワード変更(空欄なら維持)", type="password")
         if st.button("保存"):
             m_db = conn.read(worksheet="UserMaster", ttl="0s").astype(str)
-            m_db['emp_id'] = m_db['emp_id'].apply(normalize_id)
+            m_db['emp_id'] = m_db['emp_id'].apply(normalize_id_strictly)
             idx = m_db[m_db['emp_id'] == current_emp_id].index[0]
             m_db.at[idx, 'nickname'] = new_nick
             if edit_pw: m_db.at[idx, 'password_hash'] = str(make_hash(edit_pw))

@@ -10,7 +10,7 @@ import calendar
 st.set_page_config(page_title="Dopamine Tracker", layout="wide")
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-# 【秘密の合言葉】初回登録時のみ必要
+# 【秘密の合言葉】
 SECRET_AUTH_CODE = "feelist2026" 
 
 # デザインCSS
@@ -40,7 +40,7 @@ def clean_string_strictly(x):
         return ""
     return s
 
-# ID正規化関数（4桁0埋め＋小数点強制排除）
+# ID正規化関数
 def normalize_id_strictly(x):
     s = clean_string_strictly(x)
     if s == "": return ""
@@ -65,6 +65,9 @@ def load_data_cached(sheet_name):
             df["nickname"] = df["nickname"].apply(clean_string_strictly)
         else:
             df["real_name"] = df["real_name"].apply(normalize_id_strictly)
+            # 【重要】ポイント列からも小数点以降を徹底排除
+            if "points" in df.columns:
+                df["points"] = df["points"].apply(clean_string_strictly)
         return df
     except:
         return pd.DataFrame()
@@ -95,15 +98,15 @@ def main():
                 stored_hash = str(val) if pd.notna(val) and str(val).lower() != "nan" and str(val).strip() != "" else None
                 
                 if not stored_hash:
-                    st.warning("⚠️ 初回ログイン：パスワード設定が必要です。")
+                    st.warning("⚠️ パスワード設定が必要です。")
                     with st.form("init_reg_form"):
                         auth_code = st.text_input("秘密の合言葉", type="password")
-                        new_pw = st.text_input("設定するパスワード", type="password")
+                        new_pw = st.text_input("パスワード", type="password")
                         new_pw_confirm = st.text_input("パスワード(確認)", type="password")
                         if st.form_submit_button("登録してログイン"):
-                            if auth_code != SECRET_AUTH_CODE: st.error("秘密の合言葉が違います。")
-                            elif new_pw != new_pw_confirm: st.error("パスワードが不一致です。")
-                            elif len(new_pw) < 4: st.error("4文字以上に設定してください。")
+                            if auth_code != SECRET_AUTH_CODE: st.error("合言葉が違います。")
+                            elif new_pw != new_pw_confirm: st.error("不一致です。")
+                            elif len(new_pw) < 4: st.error("4文字以上で設定してください。")
                             else:
                                 current_m = conn.read(worksheet="UserMaster", ttl="0s").astype(str)
                                 current_m['emp_id'] = current_m['emp_id'].apply(normalize_id_strictly)
@@ -112,7 +115,7 @@ def main():
                                 current_m.at[idx, 'nickname'] = target_id_norm
                                 conn.update(worksheet="UserMaster", data=current_m.astype(str))
                                 st.session_state.authenticated, st.session_state.current_user = True, target_id_norm
-                                st.cache_data.clear(); st.success("登録完了！"); time.sleep(1); st.rerun()
+                                st.cache_data.clear(); st.success("完了！"); time.sleep(1); st.rerun()
                 else:
                     with st.form("normal_login_form"):
                         input_pw = st.text_input("パスワード", type="password")
@@ -127,8 +130,7 @@ def main():
     current_emp_id = st.session_state.current_user
     master_data = load_data_cached("UserMaster")
     user_info = master_data[master_data['emp_id'] == current_emp_id].iloc[0]
-    raw_nick = user_info['nickname']
-    current_nickname = clean_string_strictly(raw_nick) if raw_nick and str(raw_nick) != "" else current_emp_id
+    current_nickname = clean_string_strictly(user_info['nickname']) if pd.notna(user_info['nickname']) and str(user_info['nickname']) != "" else current_emp_id
 
     all_records = load_data_cached("Records")
     user_records = all_records[all_records['real_name'] == current_emp_id].copy()
@@ -144,9 +146,10 @@ def main():
 
     # --- タブ1: 今日の記録 ---
     with tab1:
+        # 累計ポイント表示でも小数点が出ないよう :g フォーマットを使用
         pts_series = pd.to_numeric(user_records['points'], errors='coerce').fillna(0)
         st.write(f"### {current_nickname}さんの累計ポイント: {pts_series.sum():g}")
-        target_date = st.date_input("対象日（７日前まで遡って登録、修正が出来ます）", value=date.today(), min_value=date.today()-timedelta(days=7), max_value=date.today())
+        target_date = st.date_input("対象日（７日前まで遡れます）", value=date.today(), min_value=date.today()-timedelta(days=7), max_value=date.today())
 
         @st.fragment
         def record_ui():
@@ -163,8 +166,6 @@ def main():
             n_inv, n_debt = len(sel_inv), len(sel_debt)
             inv_stars = "★" * min(n_inv, 10) + "☆" * max(0, 10 - n_inv)
             debt_stars = "★" * min(n_debt, 10) + "☆" * max(0, 10 - n_debt)
-            
-            # 個数表示ラベルのロジック
             inv_count_label = f"{n_inv}個実施！" if n_inv <= 10 else "10個以上実施！"
             debt_count_label = f"{n_debt}個実施！" if n_debt <= 10 else "10個以上実施！"
 
@@ -174,7 +175,6 @@ def main():
                 with sc2: st.markdown(f"""<div class="status-card"><div class="status-label" style="color:#cc3333;">借金型</div><div class="star-display" style="color:#ff4b4b;">{debt_stars}</div><div class="status-count">{debt_count_label}</div></div>""", unsafe_allow_html=True)
 
             day_count = n_inv - n_debt
-            # 【修正】ラベルを「本日のポイント」に変更
             st.metric("本日のポイント", f"{day_count:+d}")
 
             if st.button("登録する", type="primary"):
@@ -202,8 +202,12 @@ def main():
             summary = summary.rename(columns={"points": "ポイント累計"})
             summary["順位"] = summary["ポイント累計"].rank(ascending=False, method='min').astype(int)
             summary = summary.sort_values("順位").reset_index(drop=True)
+            # 数値表示の設定(format="%d")で、ランキング表も小数点を排除
             st.dataframe(summary[["順位", "表示名", "ポイント累計"]], use_container_width=True, hide_index=True,
-                         column_config={"順位": st.column_config.NumberColumn(alignment="left")})
+                         column_config={
+                             "順位": st.column_config.NumberColumn(alignment="left"),
+                             "ポイント累計": st.column_config.NumberColumn(format="%d")
+                         })
 
     # --- タブ3: マイデータ ---
     with tab3:
@@ -234,30 +238,36 @@ def main():
                 if day != 0:
                     t_str = f"{st.session_state.cal_y}-{st.session_state.cal_m:02d}-{day:02d}"
                     has_d = t_str in recorded_dates
-                    if cols[i].button(f"{day} 🔴" if has_d else f"{day}", key=f"btn_{t_str}", use_container_width=True):
+                    if cols[i].button(f"{day} 🔵" if has_d else f"{day}", key=f"btn_{t_str}", use_container_width=True):
                         st.session_state.sel_d = t_str
         
         if st.session_state.get('sel_d') and not user_records.empty:
             det = user_records[user_records['date'] == st.session_state.sel_d]
             if not det.empty:
                 st.markdown(f"#### 📅 {st.session_state.sel_d}")
+                # カレンダー下の詳細表示もgフォーマットで小数点を排除
                 st.write(f"**獲得:** {pd.to_numeric(det.iloc[0]['points'], errors='coerce'):+g}")
                 st.write("**🟢 投資型:**", det.iloc[0].get('investment_items', ""))
                 st.write("**🔴 借金型:**", det.iloc[0].get('debt_items', ""))
 
-        # 全履歴を表示するセクション
+        # 【問題の箇所：全履歴を表示するセクション】
         st.divider()
         with st.expander("📝 これまでの全履歴を表示する"):
             if not user_records.empty:
                 history_df = user_records.sort_values("date", ascending=False).copy()
+                # 【修正】ポイント列を強制的に数値化し、整数(int)として扱うよう再定義
+                history_df["points"] = pd.to_numeric(history_df["points"], errors="coerce").fillna(0).astype(int)
+                
                 st.dataframe(history_df[["date", "points", "investment_items", "debt_items"]], 
                              use_container_width=True, hide_index=True,
                              column_config={
-                                 "date": "日付", "points": "ポイント",
-                                 "investment_items": "投資項目", "debt_items": "借金項目"
+                                 "date": "日付", 
+                                 "points": st.column_config.NumberColumn("ポイント", format="%d"), # 表示書式でも整数を強制
+                                 "investment_items": "投資項目", 
+                                 "debt_items": "借金項目"
                              })
             else:
-                st.info("登録された履歴はまだありません。")
+                st.info("履歴はありません。")
 
     # --- タブ4: 設定 ---
     with tab4:

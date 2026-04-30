@@ -13,7 +13,7 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 # 【秘密の合言葉】初回登録時のみ必要
 SECRET_AUTH_CODE = "feelist2026" 
 
-# デザインCSS（星のサイズやカードの見た目を調整）
+# デザインCSS
 st.markdown("""
     <style>
     .status-card {
@@ -38,7 +38,7 @@ def normalize_id(x):
     except:
         return str(x).strip().zfill(4)
 
-# データを読み込む関数
+# データを読み込む関数（型エラー防止済み）
 @st.cache_data(ttl=60)
 def load_data_cached(sheet_name):
     try:
@@ -140,16 +140,22 @@ def main():
 
     tab1, tab2, tab3, tab4 = st.tabs(["今日の記録", "ランキング", "マイデータ", "設定"])
 
-    # --- タブ1: 今日の記録（星表示を復活） ---
+    # --- タブ1: 今日の記録 ---
     with tab1:
         pts_series = pd.to_numeric(user_records['points'], errors='coerce').fillna(0)
         st.write(f"### {current_nickname}さんの累計ポイント: {pts_series.sum():g}")
-        target_date = st.date_input("対象日", value=date.today(), min_value=date.today()-timedelta(days=7), max_value=date.today())
+        
+        # 説明テキストを復活させた日付入力
+        target_date = st.date_input(
+            "対象日（７日前まで遡って登録、修正が出来ます）", 
+            value=date.today(), 
+            min_value=date.today()-timedelta(days=7), 
+            max_value=date.today()
+        )
 
         @st.fragment
         def record_ui():
             st.divider()
-            # リアルタイム更新用のプレースホルダー
             status_placeholder = st.empty()
             
             col_inv, col_debt = st.columns(2)
@@ -160,14 +166,13 @@ def main():
                 st.markdown("#### 🔴 借金型 (即時快楽)")
                 sel_debt = [i for i in DEBT_ITEMS if st.checkbox(i, key=f"debt_{i}")]
             
-            # 星とカウントの計算
+            # 星表示のロジック
             n_inv, n_debt = len(sel_inv), len(sel_debt)
             inv_stars = "★" * min(n_inv, 10) + "☆" * max(0, 10 - n_inv)
             debt_stars = "★" * min(n_debt, 10) + "☆" * max(0, 10 - n_debt)
-            inv_label = f"{n_inv}個実施" if n_inv <= 10 else "10個以上達成！"
-            debt_label = f"{n_debt}個実施" if n_debt <= 10 else "10個以上..."
+            inv_label = f"{n_inv}個実施"
+            debt_label = f"{n_debt}個実施"
 
-            # ステータスカードの描画
             with status_placeholder.container():
                 sc1, sc2 = st.columns(2)
                 with sc1:
@@ -183,13 +188,18 @@ def main():
 
             st.divider()
             day_count = n_inv - n_debt
-            st.metric("本日の獲得ポイント", f"{day_count:+d}")
+            st.metric("本日の獲得予定ポイント", f"{day_count:+d}")
 
             if st.button("登録する", type="primary"):
                 with st.spinner("送信中..."):
                     db = conn.read(worksheet="Records", ttl="0s")
                     if not db.empty: db = db.astype(str)
-                    new_row = pd.DataFrame([{"real_name": current_emp_id, "nickname": current_nickname, "date": str(target_date), "points": day_count, "entry_date": str(datetime.now()), "investment_items": ", ".join(sel_inv), "debt_items": ", ".join(sel_debt)}])
+                    new_row = pd.DataFrame([{
+                        "real_name": current_emp_id, "nickname": current_nickname, 
+                        "date": str(target_date), "points": day_count, 
+                        "entry_date": str(datetime.now()), 
+                        "investment_items": ", ".join(sel_inv), "debt_items": ", ".join(sel_debt)
+                    }])
                     if not db.empty and 'real_name' in db.columns:
                         db['real_name_norm'] = db['real_name'].str.zfill(4)
                         others = db[~((db['real_name_norm'] == current_emp_id) & (db['date'] == str(target_date)))].drop(columns=['real_name_norm'])

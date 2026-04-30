@@ -13,10 +13,10 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 # 【秘密の合言葉】
 SECRET_AUTH_CODE = "feelist2026" 
 
-# デザインCSS（カレンダーのみを狙い撃ちして幅を固定）
+# デザインCSS（カレンダーの列幅を強制的に35pxに固定）
 st.markdown("""
     <style>
-    /* 共通：ステータスカード */
+    /* 共通：ステータスカード（2列表示を維持） */
     .status-card {
         border: 1px solid #e6e9ef; border-radius: 15px; padding: 15px; text-align: center;
         box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05); background-color: white; margin-bottom: 10px;
@@ -24,30 +24,32 @@ st.markdown("""
     .star-display { font-size: 26px; letter-spacing: 2px; margin: 5px 0; font-family: monospace; }
     .status-label { font-size: 16px; font-weight: bold; margin-bottom: 5px; }
     .status-count { font-size: 14px; color: #5e6064; }
-    .cal-day-header { text-align: center; font-weight: bold; padding: 5px; border-bottom: 1px solid #eee; font-size: 12px; }
+    .cal-day-header { text-align: center; font-weight: bold; font-size: 11px; color: #666; }
 
-    /* 【重要】7列あるブロック（カレンダー）のみ横幅を固定して中央寄せ */
+    /* 【最重要】7列あるブロック（カレンダー）のみ、列の幅を強制固定して中央寄せ */
     div[data-testid="stHorizontalBlock"]:has(div[data-testid="column"]:nth-child(7)) {
         display: flex !important;
         justify-content: center !important;
-        flex-direction: row !important;
         flex-wrap: nowrap !important;
-        gap: 4px !important;
+        gap: 3px !important;
     }
 
-    /* カレンダーの日付ボタンを小さく固定 */
+    /* 各日付の列を35px（現在の約1/3）に固定 */
     div[data-testid="stHorizontalBlock"]:has(div[data-testid="column"]:nth-child(7)) div[data-testid="column"] {
-        min-width: 40px !important;
-        max-width: 50px !important;
-        flex: 1 1 0% !important;
+        flex: 0 0 35px !important;
+        width: 35px !important;
+        min-width: 35px !important;
+        max-width: 35px !important;
     }
 
-    /* ボタン内の余白と文字サイズ調整 */
+    /* 日付ボタンを極限まで小さく、余白なしにする */
     div[data-testid="stHorizontalBlock"]:has(div[data-testid="column"]:nth-child(7)) button {
-        padding: 4px 0px !important;
-        font-size: 12px !important;
-        min-height: 45px !important;
-        border-radius: 8px !important;
+        padding: 0px !important;
+        font-size: 10px !important;
+        min-height: 35px !important;
+        height: 35px !important;
+        border-radius: 4px !important;
+        line-height: 1.2 !important;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -63,7 +65,7 @@ def clean_string_strictly(x):
     if s.lower() in ["nan", "none", "", "none"]: return ""
     return s
 
-# 表示用フォーマッタ（空なら全角ハイフンにする）
+# 表示用フォーマッタ
 def display_format(val):
     if pd.isna(val): return "－"
     s = str(val).strip()
@@ -222,10 +224,13 @@ def main():
                 st.session_state.cal_m += 1
                 if st.session_state.cal_m == 13: st.session_state.cal_m, st.session_state.cal_y = 1, st.session_state.cal_y + 1
                 st.rerun()
+        
+        # カレンダー本体
         cal = calendar.monthcalendar(st.session_state.cal_y, st.session_state.cal_m)
         days_names = ["月", "火", "水", "木", "金", "土", "日"]
         cols_h = st.columns(7)
         for i, d in enumerate(days_names): cols_h[i].markdown(f"<div class='cal-day-header'>{d}</div>", unsafe_allow_html=True)
+        
         recorded_dates = user_records['date'].unique().tolist() if not user_records.empty else []
         for week in cal:
             cols = st.columns(7)
@@ -233,8 +238,9 @@ def main():
                 if day != 0:
                     t_str = f"{st.session_state.cal_y}-{st.session_state.cal_m:02d}-{day:02d}"
                     has_d = t_str in recorded_dates
-                    if cols[i].button(f"{day} 🔵" if has_d else f"{day}", key=f"btn_{t_str}", use_container_width=True, disabled=not has_d):
+                    if cols[i].button(f"{day}\n🔵" if has_d else f"{day}", key=f"btn_{t_str}", disabled=not has_d):
                         st.session_state.sel_d = t_str
+        
         if st.session_state.get('sel_d'):
             det = user_records[user_records['date'] == st.session_state.sel_d]
             if not det.empty:

@@ -7,59 +7,24 @@ import time
 import calendar
 
 # --- 1. アプリ設定 ---
-st.set_page_config(page_title="Dopamine Tracker", layout="wide")
+st.set_page_config(page_title="Dopamine Tracker", layout="centered") # 画面を中央寄せに固定
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-# 【秘密の合言葉】
 SECRET_AUTH_CODE = "feelist2026" 
 
-# デザインCSS（カレンダーの「列」そのものを強制的に32pxに固定する）
+# デザインCSS
 st.markdown("""
     <style>
-    /* 1. 記録画面のステータスカード（PCで2列、星表示を保護） */
     .status-card {
         border: 1px solid #e6e9ef; border-radius: 15px; padding: 15px; text-align: center;
         background-color: white; margin-bottom: 10px;
     }
     .star-display { font-size: 26px; letter-spacing: 2px; margin: 5px 0; font-family: monospace; }
-    .status-label { font-size: 16px; font-weight: bold; margin-bottom: 5px; }
-
-    /* 2. 【核心】7列並んでいる行（曜日・日付ボタン）だけを強制的に縮小して中央寄せ */
-    /* 曜日ヘッダーと日付ボタン行の両方に適用 */
-    div[data-testid="stHorizontalBlock"]:has(div[data-testid="column"]:nth-child(7)) {
-        display: flex !important;
-        flex-direction: row !important;
-        justify-content: center !important; /* 中央寄せ */
-        max-width: 250px !important;       /* 行全体の最大幅を250pxに制限 */
-        margin: 0 auto !important;         /* 画面中央に配置 */
-        gap: 2px !important;               /* 列同士の隙間を2pxに */
-    }
-
-    /* 7列ある行の中の各「列(Column)」を強制的に32px幅にする */
-    div[data-testid="stHorizontalBlock"]:has(div[data-testid="column"]:nth-child(7)) div[data-testid="column"] {
-        flex: 0 0 32px !important;
-        width: 32px !important;
-        min-width: 32px !important;
-        max-width: 32px !important;
-        padding: 0px !important;
-        margin: 0px !important;
-    }
-
-    /* ボタン要素自体のサイズを32pxに固定し、余白を削り取る */
-    div[data-testid="stHorizontalBlock"]:has(div:nth-child(7)) button {
-        padding: 0px !important;
-        margin: 0px !important;
-        font-size: 10px !important;
-        min-height: 32px !important;
-        height: 32px !important;
-        width: 32px !important;
-        border-radius: 4px !important;
-        display: flex !important;
-        justify-content: center !important;
-        align-items: center !important;
-    }
-
-    .cal-day-header { text-align: center; font-weight: bold; font-size: 10px; color: #666; width: 32px; }
+    /* 記録マップ（カレンダー表）のスタイル */
+    .cal-map { font-family: monospace; font-size: 14px; border-collapse: collapse; margin: 0 auto; }
+    .cal-map td { padding: 5px 8px; text-align: center; border: 1px solid #eee; }
+    .has-data { color: #0066cc; font-weight: bold; }
+    .no-data { color: #ccc; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -96,9 +61,8 @@ def load_data_cached(sheet_name):
 
 # 項目リスト
 INVESTMENT_ITEMS = ["料理", "掃除", "睡眠が8時間以上", "湯舟に入浴、サウナ", "朝10分前に出社", "身体を動かした", "健康的な食生活", "洗濯", "ニュースをみる", "学習", "読書", "創作", "音楽", "挨拶", "感謝", "家族との時間", "植物", "ペット", "挑戦"]
-DEBT_ITEMS = ["外食オンリー", "掃除なし", "睡眠不足", "シャワーのみ", "朝ギリギリ", "1日ゴロゴロ", "ギルティ食", "アルコール", "タバコ", "スマホ2h+", "映像2h+", "SNS2h+", "ゲーム2h+", "ソシャゲ", "課金", "ギャンブル", "無駄遣い", "独り言", "倫理欠如"]
+DEBT_ITEMS = ["外食オンリー", "掃除なし", "睡眠不足", "シャワーのみ", "朝ギリギリ", "1日ゴロゴロ", "ギルティ食", "アルコール", "タバコ", "スマホ2h+", "映像2h+", "SNS2h+", "ゲーム2h+", "ソシャゲ起動", "ゲーム課金", "ギャンブル", "無駄遣い", "独り言", "倫理欠如"]
 
-# --- 2. メイン処理 ---
 def main():
     if 'authenticated' not in st.session_state: st.session_state.authenticated = False
     if 'last_logged_id' not in st.session_state: st.session_state.last_logged_id = ""
@@ -134,34 +98,34 @@ def main():
         st.stop()
 
     current_emp_id = st.session_state.current_user
-    master_data = load_data_cached("UserMaster")
-    user_records = load_data_cached("Records")
-    if not user_records.empty:
-        user_records = user_records[user_records['real_name'] == current_emp_id]
-    
+    all_records = load_data_cached("Records")
+    user_records = all_records[all_records['real_name'] == current_emp_id] if not all_records.empty else pd.DataFrame()
+
     tab1, tab2, tab3, tab4 = st.tabs(["今日の記録", "ランキング", "マイデータ", "設定"])
 
-    # --- 今日の記録 ---
+    # --- タブ1: 今日の記録 ---
     with tab1:
         pts = pd.to_numeric(user_records['points'], errors='coerce').fillna(0).sum() if not user_records.empty else 0
         st.write(f"### 累計ポイント: {pts:g}")
-        target_date = st.date_input("対象日", value=date.today())
+        target_date = st.date_input("対象日（７日前まで遡れます）", value=date.today())
         
         @st.fragment
         def record_ui():
-            col_inv, col_debt = st.columns(2)
+            col1, col2 = st.columns(2)
             v = st.session_state.form_version
-            with col_inv:
+            with col1:
+                st.markdown("#### 🟢 投資型")
                 sel_inv = [i for i in INVESTMENT_ITEMS if st.checkbox(i, key=f"inv_{i}_{v}")]
-            with col_debt:
+            with col2:
+                st.markdown("#### 🔴 借金型")
                 sel_debt = [i for i in DEBT_ITEMS if st.checkbox(i, key=f"debt_{i}_{v}")]
             
             n_inv, n_debt = len(sel_inv), len(sel_debt)
             inv_s, debt_s = "★" * min(n_inv, 10) + "☆" * max(0, 10 - n_inv), "★" * min(n_debt, 10) + "☆" * max(0, 10 - n_debt)
             
-            sc1, sc2 = st.columns(2)
-            with sc1: st.markdown(f"""<div class="status-card"><div class="status-label">投資型</div><div class="star-display" style="color:#00cc99;">{inv_s}</div><div>{n_inv}個</div></div>""", unsafe_allow_html=True)
-            with sc2: st.markdown(f"""<div class="status-card"><div class="status-label">借金型</div><div class="star-display" style="color:#ff4b4b;">{debt_s}</div><div>{n_debt}個</div></div>""", unsafe_allow_html=True)
+            c1, c2 = st.columns(2)
+            c1.markdown(f"""<div class="status-card"><div class="status-label">投資型</div><div class="star-display" style="color:#00cc99;">{inv_s}</div><div>{n_inv}個</div></div>""", unsafe_allow_html=True)
+            c2.markdown(f"""<div class="status-card"><div class="status-label">借金型</div><div class="star-display" style="color:#ff4b4b;">{debt_s}</div><div>{n_debt}個</div></div>""", unsafe_allow_html=True)
             
             if st.button("登録する", type="primary", use_container_width=True):
                 db = conn.read(worksheet="Records", ttl="0s").astype(str)
@@ -171,46 +135,42 @@ def main():
                 st.cache_data.clear(); st.balloons(); st.rerun()
         record_ui()
 
-    # --- マイデータ ---
+    # --- タブ3: マイデータ（新カレンダー方式） ---
     with tab3:
-        st.subheader("🗓 カレンダー履歴")
-        if 'cal_y' not in st.session_state: st.session_state.cal_y, st.session_state.cal_m = date.today().year, date.today().month
+        st.subheader("🗓 履歴の確認")
         
-        c1, c2, c3 = st.columns([1, 2, 1])
-        with c1: 
-            if st.button("⬅️", key="prev"):
-                st.session_state.cal_m -= 1
-                if st.session_state.cal_m == 0: st.session_state.cal_m, st.session_state.cal_y = 12, st.session_state.cal_y - 1
-                st.rerun()
-        with c2: st.markdown(f"<p style='text-align:center; font-weight:bold; margin:0;'>{st.session_state.cal_y}年 {st.session_state.cal_m}月</p>", unsafe_allow_html=True)
-        with c3:
-            if st.button("➡️", key="next"):
-                st.session_state.cal_m += 1
-                if st.session_state.cal_m == 13: st.session_state.cal_m, st.session_state.cal_y = 1, st.session_state.cal_y + 1
-                st.rerun()
+        # 1. 閲覧する日を専用パーツで選択（これが「別のパーツ」）
+        sel_date = st.date_input("確認したい日を選択してください", value=date.today())
         
-        # 曜日ヘッダー
-        days = ["月", "火", "水", "木", "金", "土", "日"]
-        cols_h = st.columns(7)
-        for i, d in enumerate(days): cols_h[i].markdown(f"<div class='cal-day-header'>{d}</div>", unsafe_allow_html=True)
-        
-        # 日付ボタン行
-        cal = calendar.monthcalendar(st.session_state.cal_y, st.session_state.cal_m)
+        # 2. 記録状況の視覚化（今月のどこに記録があるかを表で表示）
+        st.write("▼ 今月の記録状況（🔵＝記録あり）")
+        year, month = sel_date.year, sel_date.month
+        cal = calendar.monthcalendar(year, month)
         recorded_dates = user_records['date'].unique().tolist() if not user_records.empty else []
-        for week in cal:
-            cols = st.columns(7)
-            for i, day in enumerate(week):
-                if day != 0:
-                    t_str = f"{st.session_state.cal_y}-{st.session_state.cal_m:02d}-{day:02d}"
-                    has_d = t_str in recorded_dates
-                    if cols[i].button(f"{day}🔵" if has_d else f"{day}", key=f"btn_{t_str}", disabled=not has_d):
-                        st.session_state.sel_d = t_str
         
-        if st.session_state.get('sel_d'):
-            det = user_records[user_records['date'] == st.session_state.sel_d].iloc[0]
-            st.info(f"📅 {st.session_state.sel_d}\n\n🟢 投資: {display_format(det['investment_items'])}\n\n🔴 借金: {display_format(det['debt_items'])}")
+        html = "<table class='cal-map'><tr><td>月</td><td>火</td><td>水</td><td>木</td><td>金</td><td>土</td><td>日</td></tr>"
+        for week in cal:
+            html += "<tr>"
+            for day in week:
+                if day == 0:
+                    html += "<td></td>"
+                else:
+                    d_str = f"{year}-{month:02d}-{day:02d}"
+                    dot = "🔵" if d_str in recorded_dates else ""
+                    html += f"<td>{day}<br>{dot}</td>"
+            html += "</tr>"
+        html += "</table>"
+        st.markdown(html, unsafe_allow_html=True)
+        
+        # 3. 選択された日の詳細を表示
+        st.divider()
+        det = user_records[user_records['date'] == str(sel_date)]
+        if not det.empty:
+            d = det.iloc[0]
+            st.info(f"📅 {sel_date} の詳細\n\n🟢 投資: {display_format(d['investment_items'])}\n\n🔴 借金: {display_format(d['debt_items'])}")
+        else:
+            st.warning(f"📅 {sel_date} の記録はありません。")
 
-    # --- 設定 / ランキング ---
     with tab2: st.write("ランキング表示エリア")
     with tab4: st.button("ログアウト", on_click=lambda: st.session_state.update({"authenticated": False}))
 

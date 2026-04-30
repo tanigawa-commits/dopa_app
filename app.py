@@ -82,7 +82,6 @@ def main():
         st.warning("左側のサイドバーで社員番号とパスワードを入力し、認証ボタンを押してください。")
         return
 
-    # 全データの取得
     all_data = load_data_cached()
     
     # ニックネーム辞書の作成（最新の名前を反映）
@@ -109,7 +108,6 @@ def main():
     with tab1:
         st.write(f"### {current_nickname}さんのこれまでのポイントは {user_total_pts:g} です")
         
-        # 遡り期間の設定：7日前
         target_date = st.date_input("対象日（７日前まで遡って登録、修正が出来ます）", 
                                      value=date.today(), 
                                      min_value=date.today()-timedelta(days=7), 
@@ -144,7 +142,8 @@ def main():
 
             st.divider()
             day_count = n_inv - n_debt
-            st.metric("本日の収支累計", f"{day_count:+d} アクション")
+            # ご要望：収支累計をポイント累計に変更
+            st.metric("本日のポイント累計", f"{day_count:+d} アクション")
 
             if st.button("この内容で登録する", type="primary"):
                 with st.spinner("送信中..."):
@@ -167,20 +166,30 @@ def main():
                     st.rerun()
         record_ui()
 
-    # --- タブ2: ランキング (センタリング対応) ---
+    # --- タブ2: ランキング (タイトル中央揃え・順位ロジック修正) ---
     with tab2:
-        st.subheader("🏆 累計アクション収支ランキング")
+        # ご要望：タイトル欄をセンタリング
+        st.markdown("<h3 style='text-align: center;'>🏆 累計ポイントランキング</h3>", unsafe_allow_html=True)
+        
         if not all_data.empty:
             rdf = all_data.copy()
             rdf["points"] = pd.to_numeric(rdf["points"], errors='coerce').fillna(0)
             rdf["表示名"] = rdf["real_name"].astype(str).map(lambda x: latest_nicks.get(x, x))
             
             summary = rdf.groupby("表示名")["points"].sum().reset_index()
-            summary = summary.rename(columns={"points": "累計収支", "表示名": "ニックネーム"})
-            summary = summary.sort_values("累計収支", ascending=False).reset_index(drop=True)
-            summary.insert(0, "順位", summary.index + 1)
+            # ご要望：収支累計をポイント累計に変更
+            summary = summary.rename(columns={"points": "ポイント累計", "表示名": "ニックネーム"})
             
-            # 各列をセンター寄せに設定
+            # ご要望：順位ロジックの修正（競技方式：同点は同じ順位、次は飛ばす）
+            summary["順位"] = summary["ポイント累計"].rank(ascending=False, method='min').astype(int)
+            
+            # 表示順を整える
+            summary = summary.sort_values("順位").reset_index(drop=True)
+            
+            # 列の並び替え
+            summary = summary[["順位", "ニックネーム", "ポイント累計"]]
+            
+            # センタリング設定で表示
             st.dataframe(
                 summary, 
                 use_container_width=True, 
@@ -188,7 +197,7 @@ def main():
                 column_config={
                     "順位": st.column_config.NumberColumn(alignment="center"),
                     "ニックネーム": st.column_config.TextColumn(alignment="center"),
-                    "累計収支": st.column_config.NumberColumn(alignment="center"),
+                    "ポイント累計": st.column_config.NumberColumn(alignment="center"),
                 }
             )
 
@@ -263,7 +272,7 @@ def main():
                     
                     conn.update(worksheet="Records", data=current_all_data)
                     st.cache_data.clear() 
-                    st.success("設定を保存しました。反映には再読み込みが必要です。")
+                    st.success("設定を保存しました。")
                     time.sleep(1)
                     st.rerun()
 

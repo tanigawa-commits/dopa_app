@@ -58,42 +58,50 @@ DEBT_ITEMS = [
 
 # --- 3. メイン認証・アプリ処理 ---
 def main():
-    # --- 安全なメールアドレス取得ロジック ---
+    # --- 超・防御的なメール取得ロジック ---
     login_email = None
 
-    # 1. 開発環境の確認（Streamlitバージョンを表示）
-    # st.write(f"Debug: Streamlit version is {st.__version__}")
-
-    # 2. 複数の取得方法を順番に試す（エラーを回避）
+    # 1. あらゆる取得ルートを試す
     try:
-        # 最新バージョン (1.34.0+)
-        if hasattr(st, "context") and hasattr(st.context, "user"):
-            login_email = st.context.user.email
-        # 中間バージョン
-        elif hasattr(st, "experimental_user"):
+        # ルートA: st.experimental_user (多くの環境で安定)
+        if hasattr(st, "experimental_user"):
             login_email = st.experimental_user.email
-        # 従来の方法
-        else:
+        # ルートB: st.context.user (最新版)
+        if not login_email and hasattr(st, "context") and hasattr(st.context, "user"):
+            login_email = st.context.user.email
+        # ルートC: st.user (旧仕様)
+        if not login_email:
             login_email = getattr(st.user, "email", None)
-    except Exception as e:
-        # どの方法でも取得できない場合
-        login_email = None
+    except:
+        pass
 
-    # --- デバッグ表示（これで何が取れているか確定します） ---
-    # st.write(f"Debug - login_email: {login_email}")
-
+    # --- 原因特定のためのデバッグ表示 ---
+    # もしこれでも None なら、ブラウザか組織設定が原因です
     if not login_email:
-        st.error("Googleアカウント情報が取得できません。")
-        st.info("💡 **最終確認リスト:**")
-        st.markdown("""
-        1. **Private設定:** Streamlit CloudのManage app > Settings > Sharing が **'Only specific people...'** になっていますか？
-        2. **招待:** 設定画面の **Invite** に、今使っているメールアドレスを直接入力して追加しましたか？
-        3. **再ログイン:** 一度、Streamlit Cloud自体からログアウトして、社内アドレスでログインし直してみてください。
-        """)
+        st.error("Googleアカウント情報（メールアドレス）が取得できません。")
         
-        # 検証用に一時的に自分のアドレスを入れる場合はここ（テストが終わったら消す）
-        # login_email = "your-name@feelist.co.jp"
+        with st.expander("🛠 管理者・開発者向けデバッグ情報"):
+            st.write("Streamlit Version:", st.__version__)
+            # ログイン状態自体は認識しているか確認
+            try:
+                st.write("User Context exists:", hasattr(st, "context"))
+                if hasattr(st, "experimental_user"):
+                    st.write("Experimental User Data:", st.experimental_user)
+            except:
+                st.write("Cannot access user metadata.")
+        
+        st.info("💡 **ブラウザの設定を確認してください**")
+        st.markdown("""
+        - **サードパーティクッキーを許可:** ブラウザの設定で `share.streamlit.io` からのクッキーを許可してください。
+        - **シークレットモードを解除:** シークレットモード（プライベートウィンドウ）だと情報が遮断されることがあります。
+        """)
+
+        # 【超・最終手段】
+        # どうしても解決しない場合のみ、自分のアドレスをここに書いて一時的に開発を進めてください
+        # login_email = "tanigawa@feelist.co.jp"
         return
+
+    # --- これ以降は通常の処理 ---
 
     # --- 以下、UserMasterとRecordsの処理 ---
 

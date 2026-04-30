@@ -164,9 +164,9 @@ def main():
             inv_stars = "★" * min(n_inv, 10) + "☆" * max(0, 10 - n_inv)
             debt_stars = "★" * min(n_debt, 10) + "☆" * max(0, 10 - n_debt)
             
-            # 【復活】11個以上なら「10個以上」と表示
-            inv_count_label = f"{n_inv}個" if n_inv <= 10 else "10個以上達成！"
-            debt_count_label = f"{n_debt}個" if n_debt <= 10 else "10個以上..."
+            # 個数表示ラベルのロジック
+            inv_count_label = f"{n_inv}個実施！" if n_inv <= 10 else "10個以上実施！"
+            debt_count_label = f"{n_debt}個実施！" if n_debt <= 10 else "10個以上実施！"
 
             with status_placeholder.container():
                 sc1, sc2 = st.columns(2)
@@ -174,7 +174,8 @@ def main():
                 with sc2: st.markdown(f"""<div class="status-card"><div class="status-label" style="color:#cc3333;">借金型</div><div class="star-display" style="color:#ff4b4b;">{debt_stars}</div><div class="status-count">{debt_count_label}</div></div>""", unsafe_allow_html=True)
 
             day_count = n_inv - n_debt
-            st.metric("本日の獲得予定ポイント", f"{day_count:+d}")
+            # 【修正】ラベルを「本日のポイント」に変更
+            st.metric("本日のポイント", f"{day_count:+d}")
 
             if st.button("登録する", type="primary"):
                 with st.spinner("送信中..."):
@@ -201,7 +202,8 @@ def main():
             summary = summary.rename(columns={"points": "ポイント累計"})
             summary["順位"] = summary["ポイント累計"].rank(ascending=False, method='min').astype(int)
             summary = summary.sort_values("順位").reset_index(drop=True)
-            st.dataframe(summary[["順位", "表示名", "ポイント累計"]], use_container_width=True, hide_index=True)
+            st.dataframe(summary[["順位", "表示名", "ポイント累計"]], use_container_width=True, hide_index=True,
+                         column_config={"順位": st.column_config.NumberColumn(alignment="left")})
 
     # --- タブ3: マイデータ ---
     with tab3:
@@ -243,19 +245,16 @@ def main():
                 st.write("**🟢 投資型:**", det.iloc[0].get('investment_items', ""))
                 st.write("**🔴 借金型:**", det.iloc[0].get('debt_items', ""))
 
-        # 【復活】全履歴を表示するセクション
+        # 全履歴を表示するセクション
         st.divider()
         with st.expander("📝 これまでの全履歴を表示する"):
             if not user_records.empty:
-                # ユーザーの全データを日付順に表示
                 history_df = user_records.sort_values("date", ascending=False).copy()
                 st.dataframe(history_df[["date", "points", "investment_items", "debt_items"]], 
                              use_container_width=True, hide_index=True,
                              column_config={
-                                 "date": "日付",
-                                 "points": "ポイント",
-                                 "investment_items": "投資項目",
-                                 "debt_items": "借金項目"
+                                 "date": "日付", "points": "ポイント",
+                                 "investment_items": "投資項目", "debt_items": "借金項目"
                              })
             else:
                 st.info("登録された履歴はまだありません。")

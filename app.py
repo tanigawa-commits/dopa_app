@@ -7,24 +7,68 @@ import time
 import calendar
 
 # --- 1. アプリ設定 ---
-st.set_page_config(page_title="Dopamine Tracker", layout="centered") # 画面を中央寄せに固定
+st.set_page_config(page_title="Dopamine Tracker", layout="wide")
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 SECRET_AUTH_CODE = "feelist2026" 
 
-# デザインCSS
+# デザインCSS（ボタンを表のセルに見せかける魔法のCSS）
 st.markdown("""
     <style>
+    /* 記録画面のカード */
     .status-card {
         border: 1px solid #e6e9ef; border-radius: 15px; padding: 15px; text-align: center;
         background-color: white; margin-bottom: 10px;
     }
-    .star-display { font-size: 26px; letter-spacing: 2px; margin: 5px 0; font-family: monospace; }
-    /* 記録マップ（カレンダー表）のスタイル */
-    .cal-map { font-family: monospace; font-size: 14px; border-collapse: collapse; margin: 0 auto; }
-    .cal-map td { padding: 5px 8px; text-align: center; border: 1px solid #eee; }
-    .has-data { color: #0066cc; font-weight: bold; }
-    .no-data { color: #ccc; }
+    .star-display { font-size: 24px; letter-spacing: 2px; margin: 5px 0; font-family: monospace; }
+
+    /* 【核心】カレンダー行を250pxに固定して中央寄せ */
+    div[data-testid="stHorizontalBlock"]:has(button[key*="calbtn_"]) {
+        max-width: 250px !important;
+        margin: 0 auto !important;
+        gap: 0px !important; /* 隙間をゼロに */
+    }
+
+    /* 各セル（カラム）を35pxに固定 */
+    div[data-testid="stHorizontalBlock"]:has(button[key*="calbtn_"]) div[data-testid="column"] {
+        flex: 0 0 35px !important;
+        min-width: 35px !important;
+        padding: 0px !important;
+    }
+
+    /* ボタンを表のセルのように整形 */
+    div[data-testid="stHorizontalBlock"] button[key*="calbtn_"] {
+        padding: 0px !important;
+        margin: 0px !important;
+        font-size: 11px !important;
+        min-height: 35px !important;
+        height: 45px !important; /* 少し縦長にして青丸スペースを確保 */
+        width: 35px !important;
+        border-radius: 0px !important; /* 四角くする */
+        border: 0.5px solid #eee !important;
+        background-color: white !important;
+        display: flex !important;
+        flex-direction: column !important;
+        justify-content: center !important;
+        line-height: 1.2 !important;
+    }
+
+    /* 曜日ヘッダーも幅を合わせる */
+    .cal-header-row {
+        display: flex;
+        justify-content: center;
+        max-width: 250px;
+        margin: 0 auto;
+        border-bottom: 1px solid #eee;
+    }
+    .cal-header-cell {
+        width: 35px;
+        text-align: center;
+        font-size: 12px;
+        font-weight: bold;
+        color: #666;
+        padding: 5px 0;
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -67,7 +111,9 @@ def main():
     if 'authenticated' not in st.session_state: st.session_state.authenticated = False
     if 'last_logged_id' not in st.session_state: st.session_state.last_logged_id = ""
     if 'form_version' not in st.session_state: st.session_state.form_version = 0
+    if 'cal_sel_date' not in st.session_state: st.session_state.cal_sel_date = str(date.today())
 
+    # --- 認証 ---
     if not st.session_state.authenticated:
         st.title("🔒 Dopamine Tracker")
         target_id = st.text_input("社員番号(4桁)", value=st.session_state.last_logged_id, max_chars=4)
@@ -101,77 +147,86 @@ def main():
     all_records = load_data_cached("Records")
     user_records = all_records[all_records['real_name'] == current_emp_id] if not all_records.empty else pd.DataFrame()
 
-    tab1, tab2, tab3, tab4 = st.tabs(["今日の記録", "ランキング", "マイデータ", "設定"])
+    tab1, tab2, tab3, tab4 = st.tabs(["記録登録", "ランキング", "履歴カレンダー", "設定"])
 
-    # --- タブ1: 今日の記録 ---
+    # --- タブ1: 記録 ---
     with tab1:
         pts = pd.to_numeric(user_records['points'], errors='coerce').fillna(0).sum() if not user_records.empty else 0
-        st.write(f"### 累計ポイント: {pts:g}")
-        target_date = st.date_input("対象日（７日前まで遡れます）", value=date.today())
-        
+        st.write(f"### 累計: {pts:g} pt")
+        target_date = st.date_input("登録日", value=date.today())
         @st.fragment
         def record_ui():
             col1, col2 = st.columns(2)
             v = st.session_state.form_version
-            with col1:
-                st.markdown("#### 🟢 投資型")
-                sel_inv = [i for i in INVESTMENT_ITEMS if st.checkbox(i, key=f"inv_{i}_{v}")]
-            with col2:
-                st.markdown("#### 🔴 借金型")
-                sel_debt = [i for i in DEBT_ITEMS if st.checkbox(i, key=f"debt_{i}_{v}")]
-            
-            n_inv, n_debt = len(sel_inv), len(sel_debt)
-            inv_s, debt_s = "★" * min(n_inv, 10) + "☆" * max(0, 10 - n_inv), "★" * min(n_debt, 10) + "☆" * max(0, 10 - n_debt)
-            
-            c1, c2 = st.columns(2)
-            c1.markdown(f"""<div class="status-card"><div class="status-label">投資型</div><div class="star-display" style="color:#00cc99;">{inv_s}</div><div>{n_inv}個</div></div>""", unsafe_allow_html=True)
-            c2.markdown(f"""<div class="status-card"><div class="status-label">借金型</div><div class="star-display" style="color:#ff4b4b;">{debt_s}</div><div>{n_debt}個</div></div>""", unsafe_allow_html=True)
-            
+            with col1: sel_inv = [i for i in INVESTMENT_ITEMS if st.checkbox(i, key=f"inv_{i}_{v}")]
+            with col2: sel_debt = [i for i in DEBT_ITEMS if st.checkbox(i, key=f"debt_{i}_{v}")]
+            day_pts = len(sel_inv) - len(sel_debt)
+            st.metric("本日のポイント", f"{day_pts:+d}")
             if st.button("登録する", type="primary", use_container_width=True):
                 db = conn.read(worksheet="Records", ttl="0s").astype(str)
-                new_row = pd.DataFrame([{"real_name": current_emp_id, "date": str(target_date), "points": str(n_inv - n_debt), "investment_items": ", ".join(sel_inv), "debt_items": ", ".join(sel_debt)}])
+                new_row = pd.DataFrame([{"real_name": current_emp_id, "date": str(target_date), "points": str(day_pts), "investment_items": ", ".join(sel_inv), "debt_items": ", ".join(sel_debt)}])
                 conn.update(worksheet="Records", data=pd.concat([db, new_row]).reset_index(drop=True).astype(str))
                 st.session_state.form_version += 1
                 st.cache_data.clear(); st.balloons(); st.rerun()
         record_ui()
 
-    # --- タブ3: マイデータ（新カレンダー方式） ---
+    # --- タブ3: マイデータ（新・押せるコンパクトカレンダー） ---
     with tab3:
-        st.subheader("🗓 履歴の確認")
+        st.subheader("🗓 履歴カレンダー")
         
-        # 1. 閲覧する日を専用パーツで選択（これが「別のパーツ」）
-        sel_date = st.date_input("確認したい日を選択してください", value=date.today())
+        # 月の管理
+        if 'cal_year' not in st.session_state:
+            st.session_state.cal_year, st.session_state.cal_month = date.today().year, date.today().month
         
-        # 2. 記録状況の視覚化（今月のどこに記録があるかを表で表示）
-        st.write("▼ 今月の記録状況（🔵＝記録あり）")
-        year, month = sel_date.year, sel_date.month
-        cal = calendar.monthcalendar(year, month)
+        # 前月・次月切り替え
+        c1, c2, c3 = st.columns([1, 2, 1])
+        with c1:
+            if st.button("⬅️", key="prev_m"):
+                st.session_state.cal_month -= 1
+                if st.session_state.cal_month == 0: st.session_state.cal_month, st.session_state.cal_year = 12, st.session_state.cal_year - 1
+                st.rerun()
+        with c2: st.markdown(f"<p style='text-align:center; font-weight:bold; margin:0;'>{st.session_state.cal_year}年 {st.session_state.cal_month}月</p>", unsafe_allow_html=True)
+        with c3:
+            if st.button("➡️", key="next_m"):
+                st.session_state.cal_month += 1
+                if st.session_state.cal_month == 13: st.session_state.cal_month, st.session_state.cal_year = 1, st.session_state.cal_year + 1
+                st.rerun()
+
+        # 曜日ヘッダー
+        st.markdown("""<div class='cal-header-row'>
+            <div class='cal-header-cell'>月</div><div class='cal-header-cell'>火</div><div class='cal-header-cell'>水</div>
+            <div class='cal-header-cell'>木</div><div class='cal-header-cell'>金</div><div class='cal-header-cell'>土</div><div class='cal-header-cell'>日</div>
+            </div>""", unsafe_allow_html=True)
+        
+        # カレンダーボタンの生成
+        cal = calendar.monthcalendar(st.session_state.cal_year, st.session_state.cal_month)
         recorded_dates = user_records['date'].unique().tolist() if not user_records.empty else []
         
-        html = "<table class='cal-map'><tr><td>月</td><td>火</td><td>水</td><td>木</td><td>金</td><td>土</td><td>日</td></tr>"
         for week in cal:
-            html += "<tr>"
-            for day in week:
+            cols = st.columns(7)
+            for i, day in enumerate(week):
                 if day == 0:
-                    html += "<td></td>"
+                    cols[i].write("") # 空白
                 else:
-                    d_str = f"{year}-{month:02d}-{day:02d}"
-                    dot = "🔵" if d_str in recorded_dates else ""
-                    html += f"<td>{day}<br>{dot}</td>"
-            html += "</tr>"
-        html += "</table>"
-        st.markdown(html, unsafe_allow_html=True)
-        
-        # 3. 選択された日の詳細を表示
+                    d_str = f"{st.session_state.cal_year}-{st.session_state.cal_month:02d}-{day:02d}"
+                    has_data = d_str in recorded_dates
+                    label = f"{day}\n🔵" if has_data else f"{day}"
+                    
+                    # セル（ボタン）を配置。クリックでその日の日付をセッションに保存
+                    if cols[i].button(label, key=f"calbtn_{d_str}"):
+                        st.session_state.cal_sel_date = d_str
+
+        # 選択された日の詳細表示
         st.divider()
-        det = user_records[user_records['date'] == str(sel_date)]
+        sel_d = st.session_state.cal_sel_date
+        det = user_records[user_records['date'] == sel_d]
         if not det.empty:
             d = det.iloc[0]
-            st.info(f"📅 {sel_date} の詳細\n\n🟢 投資: {display_format(d['investment_items'])}\n\n🔴 借金: {display_format(d['debt_items'])}")
+            st.info(f"📅 {sel_d} の記録\n\n🟢 投資: {display_format(d['investment_items'])}\n\n🔴 借金: {display_format(d['debt_items'])}")
         else:
-            st.warning(f"📅 {sel_date} の記録はありません。")
+            st.write(f"📅 {sel_d} の記録はありません。日付をクリックしてください。")
 
-    with tab2: st.write("ランキング表示エリア")
+    with tab2: st.write("ランキングエリア")
     with tab4: st.button("ログアウト", on_click=lambda: st.session_state.update({"authenticated": False}))
 
 if __name__ == "__main__":

@@ -13,10 +13,10 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 # 【秘密の合言葉】
 SECRET_AUTH_CODE = "feelist2026" 
 
-# デザインCSS（カレンダーの列幅を強制的に35pxに固定）
+# デザインCSS（カレンダーを限界まで凝縮）
 st.markdown("""
     <style>
-    /* 共通：ステータスカード（2列表示を維持） */
+    /* 共通：ステータスカード */
     .status-card {
         border: 1px solid #e6e9ef; border-radius: 15px; padding: 15px; text-align: center;
         box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05); background-color: white; margin-bottom: 10px;
@@ -24,32 +24,38 @@ st.markdown("""
     .star-display { font-size: 26px; letter-spacing: 2px; margin: 5px 0; font-family: monospace; }
     .status-label { font-size: 16px; font-weight: bold; margin-bottom: 5px; }
     .status-count { font-size: 14px; color: #5e6064; }
-    .cal-day-header { text-align: center; font-weight: bold; font-size: 11px; color: #666; }
+    .cal-day-header { text-align: center; font-weight: bold; font-size: 10px; color: #666; margin-bottom: 2px; }
 
-    /* 【最重要】7列あるブロック（カレンダー）のみ、列の幅を強制固定して中央寄せ */
+    /* 【最重要】カレンダーの7列ブロックのみ、間隔をぎりぎりまで詰める */
     div[data-testid="stHorizontalBlock"]:has(div[data-testid="column"]:nth-child(7)) {
         display: flex !important;
         justify-content: center !important;
         flex-wrap: nowrap !important;
-        gap: 3px !important;
+        gap: 1px !important; /* 隙間を最小の1pxに */
     }
 
-    /* 各日付の列を35px（現在の約1/3）に固定 */
+    /* 各列の幅を極小化し、パディングを消去 */
     div[data-testid="stHorizontalBlock"]:has(div[data-testid="column"]:nth-child(7)) div[data-testid="column"] {
-        flex: 0 0 35px !important;
-        width: 35px !important;
-        min-width: 35px !important;
-        max-width: 35px !important;
+        flex: 0 0 32px !important;
+        width: 32px !important;
+        min-width: 32px !important;
+        max-width: 32px !important;
+        padding: 0px !important; /* 列の外側の余白をゼロに */
+    }
+    
+    /* 列内部のコンテナの余白もゼロに */
+    div[data-testid="stHorizontalBlock"]:has(div[data-testid="column"]:nth-child(7)) div[data-testid="column"] > div {
+        padding: 0px !important;
     }
 
-    /* 日付ボタンを極限まで小さく、余白なしにする */
+    /* 日付ボタンのデザイン：余白を消してサイズを固定 */
     div[data-testid="stHorizontalBlock"]:has(div[data-testid="column"]:nth-child(7)) button {
         padding: 0px !important;
         font-size: 10px !important;
-        min-height: 35px !important;
-        height: 35px !important;
-        border-radius: 4px !important;
-        line-height: 1.2 !important;
+        min-height: 32px !important;
+        height: 32px !important;
+        border-radius: 2px !important; /* 角丸を少し鋭角に */
+        border: 1px solid #f0f2f6 !important;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -58,18 +64,18 @@ st.markdown("""
 def make_hash(password):
     return hashlib.sha256(str.encode(password)).hexdigest()
 
-# 文字列クリーニング
+# 文字列クリーニング（.0 / None 徹底排除）
 def clean_string_strictly(x):
     s = str(x).strip()
     if '.' in s: s = s.split('.')[0]
-    if s.lower() in ["nan", "none", "", "none"]: return ""
+    if s.lower() in ["nan", "none", "", "null"]: return ""
     return s
 
 # 表示用フォーマッタ
 def display_format(val):
     if pd.isna(val): return "－"
     s = str(val).strip()
-    if s.lower() in ["nan", "none", "", "null", "undefined"]: return "－"
+    if s.lower() in ["nan", "none", "", "null"]: return "－"
     return s
 
 # ID正規化
@@ -99,7 +105,7 @@ def load_data_cached(sheet_name):
 
 # 項目リスト
 INVESTMENT_ITEMS = ["料理", "掃除", "睡眠が8時間以上", "湯舟に入浴、サウナ", "朝10分前に出社", "身体を動かした", "健康的な食生活", "洗濯", "ニュースをみる", "学習", "読書", "創作", "音楽", "挨拶", "感謝", "家族との時間", "植物", "ペット", "挑戦"]
-DEBT_ITEMS = ["外食オンリー", "掃除なし", "睡眠不足", "シャワーのみ", "朝ギリギリ", "1日ゴロゴロ", "ギルティ食", "アルコール", "タバコ", "スマホ2h+", "映像2h+", "SNS2h+", "ゲーム2h+", "ソシャゲ", "課金", "ギャンブル", "無駄遣い", "独り言", "倫理欠如"]
+DEBT_ITEMS = ["外食オンリー", "掃除なし", "睡眠不足", "シャワーのみ", "朝ギリギリ", "1日ゴロゴロ", "ギルティ食", "アルコール", "タバコ", "スマホ2h+", "映像2h+", "SNS2h+", "ゲーム2h+", "ソシャゲ起動", "ゲーム課金", "ギャンブル", "無駄遣い", "独り言", "倫理欠如"]
 
 # --- 2. メイン認証 ---
 def main():
@@ -138,6 +144,7 @@ def main():
                                 cm.at[idx, 'password_hash'] = str(make_hash(np))
                                 cm.at[idx, 'nickname'] = target_id_norm
                                 conn.update(worksheet="UserMaster", data=cm.astype(str))
+                                st.session_state.last_logged_id = target_id_norm
                                 st.session_state.authenticated, st.session_state.current_user = True, target_id_norm
                                 st.cache_data.clear(); st.rerun()
                 else:
@@ -145,6 +152,7 @@ def main():
                         ip = st.text_input("パスワード", type="password")
                         if st.form_submit_button("ログイン"):
                             if make_hash(ip) == stored_hash:
+                                st.session_state.last_logged_id = target_id_norm
                                 st.session_state.authenticated, st.session_state.current_user = True, target_id_norm
                                 st.cache_data.clear(); st.rerun()
         st.stop()
@@ -157,9 +165,9 @@ def main():
     all_records = load_data_cached("Records")
     user_records = all_records[all_records['real_name'] == current_emp_id].copy()
 
-    tab1, tab2, tab3, tab4 = st.tabs(["今日の記録", "ランキング", "マイデータ", "設定"])
+    tab1, tab2, tab3, tab4 = st.tabs(["記録登録", "ランキング", "履歴カレンダー", "設定"])
 
-    # --- 今日の記録 ---
+    # --- タブ1: 記録 ---
     with tab1:
         pts = pd.to_numeric(user_records['points'], errors='coerce').fillna(0).sum()
         st.write(f"### {current_nickname}さんの累計ポイント: {pts:g}")
@@ -167,7 +175,7 @@ def main():
         @st.fragment
         def record_ui():
             st.divider()
-            status_placeholder = st.empty()
+            status_p = st.empty()
             col_inv, col_debt = st.columns(2)
             v = st.session_state.form_version
             with col_inv:
@@ -177,14 +185,14 @@ def main():
                 st.markdown("#### 🔴 借金型")
                 sel_debt = [i for i in DEBT_ITEMS if st.checkbox(i, key=f"debt_{i}_{v}")]
             n_inv, n_debt = len(sel_inv), len(sel_debt)
-            inv_stars = "★" * min(n_inv, 10) + "☆" * max(0, 10 - n_inv)
-            debt_stars = "★" * min(n_debt, 10) + "☆" * max(0, 10 - n_debt)
-            inv_l = f"{n_inv}個実施！" if n_inv <= 10 else "10個以上実施！"
-            debt_l = f"{n_debt}個実施！" if n_debt <= 10 else "10個以上実施！"
-            with status_placeholder.container():
+            inv_s = "★" * min(n_inv, 10) + "☆" * max(0, 10 - n_inv)
+            debt_s = "★" * min(n_debt, 10) + "☆" * max(0, 10 - n_debt)
+            inv_txt = f"{n_inv}個実施！" if n_inv <= 10 else "10個以上実施！"
+            debt_txt = f"{n_debt}個実施！" if n_debt <= 10 else "10個以上実施！"
+            with status_p.container():
                 sc1, sc2 = st.columns(2)
-                with sc1: st.markdown(f"""<div class="status-card"><div class="status-label" style="color:#0066cc;">投資型</div><div class="star-display" style="color:#00cc99;">{inv_stars}</div><div class="status-count">{inv_l}</div></div>""", unsafe_allow_html=True)
-                with sc2: st.markdown(f"""<div class="status-card"><div class="status-label" style="color:#cc3333;">借金型</div><div class="star-display" style="color:#ff4b4b;">{debt_stars}</div><div class="status-count">{debt_l}</div></div>""", unsafe_allow_html=True)
+                with sc1: st.markdown(f"""<div class="status-card"><div class="status-label" style="color:#0066cc;">投資型</div><div class="star-display" style="color:#00cc99;">{inv_s}</div><div class="status-count">{inv_txt}</div></div>""", unsafe_allow_html=True)
+                with sc2: st.markdown(f"""<div class="status-card"><div class="status-label" style="color:#cc3333;">借金型</div><div class="star-display" style="color:#ff4b4b;">{debt_s}</div><div class="status-count">{debt_txt}</div></div>""", unsafe_allow_html=True)
             day_pts = n_inv - n_debt
             st.metric("本日のポイント", f"{day_pts:+d}")
             if st.button("登録する", type="primary", use_container_width=True):
@@ -197,7 +205,7 @@ def main():
                 st.cache_data.clear(); st.balloons(); st.rerun()
         record_ui()
 
-    # --- ランキング ---
+    # --- タブ2: ランキング ---
     with tab2:
         if not all_records.empty:
             rdf = all_records.copy()
@@ -208,7 +216,7 @@ def main():
             summary["順位"] = summary["points"].rank(ascending=False, method='min').astype(int)
             st.dataframe(summary.sort_values("順位")[["順位", "名", "points"]], use_container_width=True, hide_index=True, column_config={"順位": st.column_config.NumberColumn(alignment="left"), "points": st.column_config.NumberColumn("累計", format="%d", alignment="left")})
 
-    # --- マイデータ ---
+    # --- タブ3: 履歴 ---
     with tab3:
         st.subheader("🗓 カレンダー履歴")
         if 'cal_y' not in st.session_state: st.session_state.cal_y, st.session_state.cal_m = date.today().year, date.today().month
@@ -225,7 +233,6 @@ def main():
                 if st.session_state.cal_m == 13: st.session_state.cal_m, st.session_state.cal_y = 1, st.session_state.cal_y + 1
                 st.rerun()
         
-        # カレンダー本体
         cal = calendar.monthcalendar(st.session_state.cal_y, st.session_state.cal_m)
         days_names = ["月", "火", "水", "木", "金", "土", "日"]
         cols_h = st.columns(7)
@@ -253,11 +260,11 @@ def main():
                 for c in ["investment_items", "debt_items"]: h_df[c] = h_df[c].apply(display_format)
                 st.dataframe(h_df[["date", "points", "investment_items", "debt_items"]], use_container_width=True, hide_index=True, column_config={"points": st.column_config.NumberColumn(format="%d", alignment="left")})
 
-    # --- 設定 ---
+    # --- タブ4: 設定 ---
     with tab4:
         new_nick = st.text_input("ニックネーム変更", value=current_nickname)
         edit_pw = st.text_input("パスワード変更(空欄なら維持)", type="password")
-        if st.button("設定を保存する", use_container_width=True):
+        if st.button("設定を保存", use_container_width=True):
             m_db = conn.read(worksheet="UserMaster", ttl="0s").astype(str)
             m_db['emp_id'] = m_db['emp_id'].apply(normalize_id_strictly)
             idx = m_db[m_db['emp_id'] == current_emp_id].index[0]
@@ -268,3 +275,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+    

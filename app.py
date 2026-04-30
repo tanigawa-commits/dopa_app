@@ -58,6 +58,22 @@ DEBT_ITEMS = [
 
 # --- 3. メイン認証・アプリ処理 ---
 def main():
+    # --- デバッグ用表示 ---
+    # 実際の中身を画面に出して確認します
+    st.write("Debug - User Context:", st.context.user)
+    
+    try:
+        login_email = st.context.user.email
+    except AttributeError:
+        login_email = getattr(st.user, 'email', None)
+
+    # もしここで login_email が None なら、以下のボタンを表示して
+    # ログインを促す仕組みを追加してみます
+    if not login_email:
+        st.error("Googleアカウント情報が取得できません。")
+        st.info("一度、右上のメニューなどからStreamlitにログインしているか確認してください。")
+        # 開発中のみ、自分のアドレスを一時的に代入して先に進む（検証用）
+        # login_email = "あなたのメールアドレス@feelist.co.jp"
     st.title("Dopamine Tracker")
     st.subheader("今日の行動を記録して、脳の健康状態を可視化しましょう")
 

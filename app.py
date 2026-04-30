@@ -85,18 +85,17 @@ def main():
     # 全データの取得
     all_data = load_data_cached()
     
-    # 社員番号ごとの「最新の有効なニックネーム」辞書を作成
+    # ニックネーム辞書の作成（最新の名前を反映）
     latest_nicks = {}
     if not all_data.empty:
         rdf_sorted = all_data.sort_values("entry_date", ascending=True)
         for _, row in rdf_sorted.iterrows():
             eid = str(row['real_name'])
             nick = str(row['nickname'])
-            # 社員番号そのものや空、nan、0などを除外して有効な名前を保持
             if nick.strip() != "" and nick != eid and nick != "nan" and nick != "0":
                 latest_nicks[eid] = nick
 
-    # ログインユーザーの表示名特定
+    # ログインユーザーの表示名
     current_nickname = latest_nicks.get(str(saved_emp_id), str(saved_emp_id))
     
     # ユーザー個人の記録抽出
@@ -110,7 +109,7 @@ def main():
     with tab1:
         st.write(f"### {current_nickname}さんのこれまでのポイントは {user_total_pts:g} です")
         
-        # 7日前まで遡れる設定
+        # 遡り期間の設定：7日前
         target_date = st.date_input("対象日（７日前まで遡って登録、修正が出来ます）", 
                                      value=date.today(), 
                                      min_value=date.today()-timedelta(days=7), 
@@ -168,25 +167,30 @@ def main():
                     st.rerun()
         record_ui()
 
-    # --- タブ2: ランキング ---
+    # --- タブ2: ランキング (センタリング対応) ---
     with tab2:
         st.subheader("🏆 累計アクション収支ランキング")
         if not all_data.empty:
             rdf = all_data.copy()
             rdf["points"] = pd.to_numeric(rdf["points"], errors='coerce').fillna(0)
-            
-            # 社員番号を表示名（ニックネーム）にマッピング
             rdf["表示名"] = rdf["real_name"].astype(str).map(lambda x: latest_nicks.get(x, x))
             
-            # 集計
             summary = rdf.groupby("表示名")["points"].sum().reset_index()
             summary = summary.rename(columns={"points": "累計収支", "表示名": "ニックネーム"})
-            
-            # 高い順にソートし、順位列を追加
             summary = summary.sort_values("累計収支", ascending=False).reset_index(drop=True)
             summary.insert(0, "順位", summary.index + 1)
             
-            st.dataframe(summary, use_container_width=True, hide_index=True)
+            # 各列をセンター寄せに設定
+            st.dataframe(
+                summary, 
+                use_container_width=True, 
+                hide_index=True,
+                column_config={
+                    "順位": st.column_config.NumberColumn(alignment="center"),
+                    "ニックネーム": st.column_config.TextColumn(alignment="center"),
+                    "累計収支": st.column_config.NumberColumn(alignment="center"),
+                }
+            )
 
     # --- タブ3: マイデータ ---
     with tab3:
@@ -239,7 +243,7 @@ def main():
     # --- タブ4: 設定 ---
     with tab4:
         st.subheader("⚙️ ユーザー設定")
-        st.info(f"社員番号: {saved_emp_id}")
+        st.info(f"ログイン中の社員番号: {saved_emp_id}")
         new_nick = st.text_input("ニックネームの登録・変更", value=current_nickname if current_nickname != str(saved_emp_id) else "")
         
         if st.button("設定を保存"):

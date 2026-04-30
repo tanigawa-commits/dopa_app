@@ -31,23 +31,19 @@ st.markdown("""
 def make_hash(password):
     return hashlib.sha256(str.encode(password)).hexdigest()
 
-# 文字列から「.」以降を完全に切り落とす最強のクリーニング関数
+# 文字列クリーニング
 def clean_string_strictly(x):
     s = str(x).strip()
-    if '.' in s:
-        s = s.split('.')[0]
-    if s.lower() == "nan" or s == "" or s == "none":
-        return ""
+    if '.' in s: s = s.split('.')[0]
+    if s.lower() == "nan" or s == "" or s == "none": return ""
     return s
 
 # ID正規化関数
 def normalize_id_strictly(x):
     s = clean_string_strictly(x)
     if s == "": return ""
-    try:
-        return str(int(float(s))).zfill(4)
-    except:
-        return s.zfill(4)
+    try: return str(int(float(s))).zfill(4)
+    except: return s.zfill(4)
 
 # データを読み込む関数
 @st.cache_data(ttl=60)
@@ -77,18 +73,14 @@ DEBT_ITEMS = ["外食オンリー", "掃除なし", "睡眠不足", "シャワ�
 
 # --- 2. メイン認証処理 ---
 def main():
-    # セッション状態の初期化
     if 'authenticated' not in st.session_state:
         st.session_state.authenticated = False
         st.session_state.current_user = None
     if 'last_logged_id' not in st.session_state:
         st.session_state.last_logged_id = ""
 
-    # --- 認証画面 ---
     if not st.session_state.authenticated:
         st.title("🔒 Dopamine Tracker - 認証")
-        
-        # 【機能追加】valueにst.session_state.last_logged_idを指定してデフォルト表示
         target_id = st.text_input("社員番号(4桁)", value=st.session_state.last_logged_id, max_chars=4, key="login_id_input")
         
         if target_id:
@@ -120,7 +112,7 @@ def main():
                                 current_m.at[idx, 'nickname'] = target_id_norm
                                 conn.update(worksheet="UserMaster", data=current_m.astype(str))
                                 
-                                st.session_state.last_logged_id = target_id_norm # IDを保存
+                                st.session_state.last_logged_id = target_id_norm
                                 st.session_state.authenticated, st.session_state.current_user = True, target_id_norm
                                 st.cache_data.clear(); st.success("完了！"); time.sleep(1); st.rerun()
                 else:
@@ -128,13 +120,13 @@ def main():
                         input_pw = st.text_input("パスワード", type="password")
                         if st.form_submit_button("ログイン"):
                             if make_hash(input_pw) == stored_hash:
-                                st.session_state.last_logged_id = target_id_norm # IDを保存
+                                st.session_state.last_logged_id = target_id_norm
                                 st.session_state.authenticated, st.session_state.current_user = True, target_id_norm
                                 st.cache_data.clear(); st.rerun()
                             else: st.error("パスワードが違います。")
         st.stop()
 
-    # --- 認証済み：データ準備 ---
+    # --- 認証済みデータ準備 ---
     current_emp_id = st.session_state.current_user
     master_data = load_data_cached("UserMaster")
     user_info = master_data[master_data['emp_id'] == current_emp_id].iloc[0]
@@ -148,7 +140,6 @@ def main():
         st.write(f"ログイン: **{current_nickname}**")
         if st.button("ログアウト"):
             st.session_state.authenticated = False
-            # ここでは last_logged_id は消さないので、認証画面でデフォルト表示される
             st.rerun()
 
     tab1, tab2, tab3, tab4 = st.tabs(["今日の記録", "ランキング", "マイデータ", "設定"])
@@ -195,6 +186,13 @@ def main():
                     }])
                     others = db[~((db['real_name'] == current_emp_id) & (db['date'] == str(target_date)))]
                     conn.update(worksheet="Records", data=pd.concat([others, new_row]).reset_index(drop=True).astype(str))
+                    
+                    # --- 【修正】登録成功時にチェックボックスをクリアする処理 ---
+                    for item in INVESTMENT_ITEMS:
+                        st.session_state[f"inv_{item}"] = False
+                    for item in DEBT_ITEMS:
+                        st.session_state[f"debt_{item}"] = False
+                    
                     st.cache_data.clear(); st.balloons(); st.success("登録完了！"); time.sleep(1); st.rerun()
         record_ui()
 
@@ -210,8 +208,6 @@ def main():
             summary = summary.rename(columns={"points": "ポイント累計"})
             summary["順位"] = summary["ポイント累計"].rank(ascending=False, method='min').astype(int)
             summary = summary.sort_values("順位").reset_index(drop=True)
-            
-            # 【修正】全項目（順位、表示名、ポイント累計）を左寄せに設定
             st.dataframe(summary[["順位", "表示名", "ポイント累計"]], use_container_width=True, hide_index=True,
                          column_config={
                              "順位": st.column_config.NumberColumn(alignment="left"),

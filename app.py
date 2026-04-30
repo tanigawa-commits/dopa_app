@@ -13,15 +13,16 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 # 【秘密の合言葉】初回登録時のみ必要
 SECRET_AUTH_CODE = "feelist2026" 
 
-# デザインCSS
+# デザインCSS（星のサイズやカードの見た目を調整）
 st.markdown("""
     <style>
     .status-card {
         border: 1px solid #e6e9ef; border-radius: 15px; padding: 15px; text-align: center;
         box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05); background-color: white; margin-bottom: 10px;
     }
-    .star-display { font-size: 26px; letter-spacing: 2px; margin: 5px 0; }
-    .status-label { font-size: 16px; font-weight: bold; }
+    .star-display { font-size: 26px; letter-spacing: 2px; margin: 5px 0; font-family: monospace; }
+    .status-label { font-size: 16px; font-weight: bold; margin-bottom: 5px; }
+    .status-count { font-size: 14px; color: #5e6064; }
     .cal-day-header { text-align: center; font-weight: bold; padding: 5px; border-bottom: 1px solid #eee; }
     </style>
     """, unsafe_allow_html=True)
@@ -43,7 +44,6 @@ def load_data_cached(sheet_name):
     try:
         df = conn.read(worksheet=sheet_name, ttl="1m")
         if df.empty:
-            # 空の場合、必要な列だけ定義した空のDFを返す
             if sheet_name == "UserMaster":
                 return pd.DataFrame(columns=["emp_id", "password_hash", "nickname"])
             else:
@@ -52,7 +52,7 @@ def load_data_cached(sheet_name):
     except:
         return pd.DataFrame()
 
-# リスト定義
+# 項目リスト
 INVESTMENT_ITEMS = ["料理", "掃除", "睡眠が8時間以上", "湯舟に入浴、サウナ", "朝10分前に出社", "身体を動かした", "健康的な食生活", "洗濯", "ニュースをみる", "学習", "読書", "創作", "音楽", "挨拶", "感謝", "家族との時間", "植物", "ペット", "新しい挑戦"]
 DEBT_ITEMS = ["外食オンリー", "掃除なし", "睡眠不足", "シャワーのみ", "朝ギリギリ", "1日ゴロゴロ", "ギルティ食", "アルコール", "タバコ", "スマホ2h以上", "映像2h以上", "SNS2h以上", "ゲーム2h以上", "ソシャゲ起動", "ゲーム課金", "ギャンブル", "無駄な出費", "独り言", "倫理欠如"]
 
@@ -62,16 +62,14 @@ def main():
         st.session_state.authenticated = False
         st.session_state.current_user = None
 
-    # --- ログイン・登録画面 ---
     if not st.session_state.authenticated:
         st.title("🔒 Dopamine Tracker - 認証")
-        
         target_id = st.text_input("社員番号(4桁)", max_chars=4, key="login_id")
         
         if target_id:
             master = load_data_cached("UserMaster")
             if master.empty:
-                st.error("マスターデータに社員番号が登録されていません。スプレッドシートを確認してください。")
+                st.error("マスターデータが読み込めません。")
                 return
 
             master['emp_id_norm'] = master['emp_id'].apply(normalize_id)
@@ -99,39 +97,32 @@ def main():
                             elif new_pw != new_pw_confirm:
                                 st.error("パスワードが一致しません。")
                             elif len(new_pw) < 4:
-                                st.error("パスワードは4文字以上で設定してください。")
+                                st.error("パスワードは4文字以上です。")
                             else:
-                                current_master = conn.read(worksheet="UserMaster", ttl="0s").astype(str)
-                                current_master['emp_id_norm'] = current_master['emp_id'].apply(normalize_id)
-                                idx = current_master[current_master['emp_id_norm'] == target_id_norm].index[0]
-                                if 'password_hash' not in current_master.columns:
-                                    current_master['password_hash'] = ""
-                                current_master.at[idx, 'password_hash'] = str(make_hash(new_pw))
-                                current_master.at[idx, 'nickname'] = target_id_norm
-                                final_master = current_master.drop(columns=['emp_id_norm'])
-                                conn.update(worksheet="UserMaster", data=final_master)
-                                st.session_state.authenticated = True
-                                st.session_state.current_user = target_id_norm
-                                st.cache_data.clear()
-                                st.success("登録完了！")
-                                time.sleep(1); st.rerun()
+                                current_m = conn.read(worksheet="UserMaster", ttl="0s").astype(str)
+                                current_m['emp_id_norm'] = current_m['emp_id'].apply(normalize_id)
+                                idx = current_m[current_m['emp_id_norm'] == target_id_norm].index[0]
+                                if 'password_hash' not in current_m.columns: current_m['password_hash'] = ""
+                                current_m.at[idx, 'password_hash'] = str(make_hash(new_pw))
+                                current_m.at[idx, 'nickname'] = target_id_norm
+                                conn.update(worksheet="UserMaster", data=current_m.drop(columns=['emp_id_norm']))
+                                st.session_state.authenticated, st.session_state.current_user = True, target_id_norm
+                                st.cache_data.clear(); st.success("登録完了！"); time.sleep(1); st.rerun()
                 else:
                     with st.form("normal_login_form"):
                         input_pw = st.text_input("パスワード", type="password")
                         if st.form_submit_button("ログイン"):
                             if make_hash(input_pw) == stored_hash:
-                                st.session_state.authenticated = True
-                                st.session_state.current_user = target_id_norm
+                                st.session_state.authenticated, st.session_state.current_user = True, target_id_norm
                                 st.rerun()
-                            else:
-                                st.error("パスワードが違います。")
+                            else: st.error("パスワードが違います。")
         st.stop()
 
     # --- メインコンテンツ ---
     current_emp_id = st.session_state.current_user
-    master = load_data_cached("UserMaster")
-    master['emp_id_norm'] = master['emp_id'].apply(normalize_id)
-    user_info = master[master['emp_id_norm'] == current_emp_id].iloc[0]
+    master_data = load_data_cached("UserMaster")
+    master_data['emp_id_norm'] = master_data['emp_id'].apply(normalize_id)
+    user_info = master_data[master_data['emp_id_norm'] == current_emp_id].iloc[0]
     current_nickname = user_info['nickname'] if pd.notna(user_info['nickname']) and str(user_info['nickname']) != "nan" else current_emp_id
 
     st.title("📊 Dopamine Tracker")
@@ -142,53 +133,70 @@ def main():
             st.rerun()
 
     all_records = load_data_cached("Records")
-    
-    # 修正ポイント: 列の存在チェックとフィルタリングの安全化
     if not all_records.empty and 'real_name' in all_records.columns:
         user_records = all_records[all_records['real_name'].astype(str).str.zfill(4) == current_emp_id].copy()
     else:
-        # データがない場合は、構造だけ持った空のDFを作成
         user_records = pd.DataFrame(columns=["real_name", "nickname", "date", "points", "entry_date", "investment_items", "debt_items"])
 
     tab1, tab2, tab3, tab4 = st.tabs(["今日の記録", "ランキング", "マイデータ", "設定"])
 
-    # --- タブ1: 今日の記録 ---
+    # --- タブ1: 今日の記録（星表示を復活） ---
     with tab1:
-        # ポイント計算の安全化
         pts_series = pd.to_numeric(user_records['points'], errors='coerce').fillna(0)
         st.write(f"### {current_nickname}さんの累計ポイント: {pts_series.sum():g}")
-        
         target_date = st.date_input("対象日", value=date.today(), min_value=date.today()-timedelta(days=7), max_value=date.today())
 
         @st.fragment
         def record_ui():
             st.divider()
-            c1, c2 = st.columns(2)
-            with c1:
-                st.markdown("#### 🟢 投資型")
+            # リアルタイム更新用のプレースホルダー
+            status_placeholder = st.empty()
+            
+            col_inv, col_debt = st.columns(2)
+            with col_inv:
+                st.markdown("#### 🟢 投資型 (自己投資)")
                 sel_inv = [i for i in INVESTMENT_ITEMS if st.checkbox(i, key=f"inv_{i}")]
-            with c2:
-                st.markdown("#### 🔴 借金型")
+            with col_debt:
+                st.markdown("#### 🔴 借金型 (即時快楽)")
                 sel_debt = [i for i in DEBT_ITEMS if st.checkbox(i, key=f"debt_{i}")]
             
-            day_count = len(sel_inv) - len(sel_debt)
-            st.metric("獲得予定", f"{day_count:+d}")
+            # 星とカウントの計算
+            n_inv, n_debt = len(sel_inv), len(sel_debt)
+            inv_stars = "★" * min(n_inv, 10) + "☆" * max(0, 10 - n_inv)
+            debt_stars = "★" * min(n_debt, 10) + "☆" * max(0, 10 - n_debt)
+            inv_label = f"{n_inv}個実施" if n_inv <= 10 else "10個以上達成！"
+            debt_label = f"{n_debt}個実施" if n_debt <= 10 else "10個以上..."
+
+            # ステータスカードの描画
+            with status_placeholder.container():
+                sc1, sc2 = st.columns(2)
+                with sc1:
+                    st.markdown(f"""<div class="status-card">
+                                <div class="status-label" style="color:#0066cc;">投資型ステータス</div>
+                                <div class="star-display" style="color:#00cc99;">{inv_stars}</div>
+                                <div class="status-count">{inv_label}</div></div>""", unsafe_allow_html=True)
+                with sc2:
+                    st.markdown(f"""<div class="status-card">
+                                <div class="status-label" style="color:#cc3333;">借金型ステータス</div>
+                                <div class="star-display" style="color:#ff4b4b;">{debt_stars}</div>
+                                <div class="status-count">{debt_label}</div></div>""", unsafe_allow_html=True)
+
+            st.divider()
+            day_count = n_inv - n_debt
+            st.metric("本日の獲得ポイント", f"{day_count:+d}")
 
             if st.button("登録する", type="primary"):
-                db = conn.read(worksheet="Records", ttl="0s")
-                if not db.empty:
-                    db = db.astype(str)
-                new_row = pd.DataFrame([{"real_name": current_emp_id, "nickname": current_nickname, "date": str(target_date), "points": day_count, "entry_date": str(datetime.now()), "investment_items": ", ".join(sel_inv), "debt_items": ", ".join(sel_debt)}])
-                
-                if not db.empty and 'real_name' in db.columns:
-                    db['real_name_norm'] = db['real_name'].str.zfill(4)
-                    others = db[~((db['real_name_norm'] == current_emp_id) & (db['date'] == str(target_date)))].drop(columns=['real_name_norm'])
-                    updated_data = pd.concat([others, new_row]).reset_index(drop=True)
-                else:
-                    updated_data = new_row
-                    
-                conn.update(worksheet="Records", data=updated_data)
-                st.cache_data.clear(); st.success("登録完了！"); time.sleep(1); st.rerun()
+                with st.spinner("送信中..."):
+                    db = conn.read(worksheet="Records", ttl="0s")
+                    if not db.empty: db = db.astype(str)
+                    new_row = pd.DataFrame([{"real_name": current_emp_id, "nickname": current_nickname, "date": str(target_date), "points": day_count, "entry_date": str(datetime.now()), "investment_items": ", ".join(sel_inv), "debt_items": ", ".join(sel_debt)}])
+                    if not db.empty and 'real_name' in db.columns:
+                        db['real_name_norm'] = db['real_name'].str.zfill(4)
+                        others = db[~((db['real_name_norm'] == current_emp_id) & (db['date'] == str(target_date)))].drop(columns=['real_name_norm'])
+                        updated = pd.concat([others, new_row]).reset_index(drop=True)
+                    else: updated = new_row
+                    conn.update(worksheet="Records", data=updated)
+                    st.cache_data.clear(); st.success("登録完了！"); time.sleep(1); st.rerun()
         record_ui()
 
     # --- タブ2: ランキング ---
@@ -199,17 +207,14 @@ def main():
             rdf["points"] = pd.to_numeric(rdf["points"], errors='coerce').fillna(0)
             rdf['real_name_norm'] = rdf['real_name'].astype(str).str.zfill(4)
             summary = rdf.groupby("real_name_norm")["points"].sum().reset_index()
-            summary = summary.merge(master[['emp_id_norm', 'nickname']], left_on='real_name_norm', right_on='emp_id_norm', how='left')
+            summary = summary.merge(master_data[['emp_id_norm', 'nickname']], left_on='real_name_norm', right_on='emp_id_norm', how='left')
             summary['ニックネーム'] = summary['nickname'].fillna(summary['real_name_norm'])
             summary = summary.rename(columns={"points": "ポイント累計"})
             summary["順位"] = summary["ポイント累計"].rank(ascending=False, method='min').astype(int)
             summary = summary.sort_values("順位").reset_index(drop=True)
-            st.dataframe(summary[["順位", "ニックネーム", "ポイント累計"]], use_container_width=True, hide_index=True, 
-                         column_config={"順位": st.column_config.NumberColumn(alignment="left")})
-        else:
-            st.info("ランキングデータはまだありません。")
+            st.dataframe(summary[["順位", "ニックネーム", "ポイント累計"]], use_container_width=True, hide_index=True, column_config={"順位": st.column_config.NumberColumn(alignment="left")})
 
-    # --- タブ3以降は構造維持 ---
+    # --- タブ3: マイデータ ---
     with tab3:
         st.subheader("🗓 カレンダー履歴")
         if 'cal_y' not in st.session_state: st.session_state.cal_y, st.session_state.cal_m = date.today().year, date.today().month
@@ -242,6 +247,7 @@ def main():
                 st.markdown(f"#### 📅 {st.session_state.sel_d}"); st.write(f"**獲得ポイント:** {det.iloc[0]['points']:+g}")
                 st.write("**🟢 投資型:**", det.iloc[0].get('investment_items', "")); st.write("**🔴 借金型:**", det.iloc[0].get('debt_items', ""))
 
+    # --- タブ4: 設定 ---
     with tab4:
         st.subheader("⚙️ 設定")
         new_nick = st.text_input("ニックネーム変更", value=current_nickname)
@@ -252,8 +258,7 @@ def main():
             idx = m_db[m_db['emp_id_norm'] == current_emp_id].index[0]
             m_db.at[idx, 'nickname'] = new_nick
             if edit_pw: m_db.at[idx, 'password_hash'] = make_hash(edit_pw)
-            final_m = m_db.drop(columns=['emp_id_norm'])
-            conn.update(worksheet="UserMaster", data=final_m)
+            conn.update(worksheet="UserMaster", data=m_db.drop(columns=['emp_id_norm']))
             st.cache_data.clear(); st.success("更新しました。"); time.sleep(1); st.rerun()
 
 if __name__ == "__main__":

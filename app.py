@@ -29,12 +29,22 @@ st.markdown("""
     .cal-day-header { text-align: center; font-weight: bold; padding: 5px; border-bottom: 1px solid #eee; }
     
     /* 【最重要】ランキング表のヘッダー（タイトル欄）を中央に強制配置 */
-    div[data-testid="column-header-content"] {
+    /* 複数の内部クラスをターゲットにして確実にセンタリングします */
+    div[data-testid="column-header-content"],
+    div[class*="StyledColumnHeaderContent"],
+    div[class*="header-content"] {
         display: flex !important;
         justify-content: center !important;
+        text-align: center !important;
         width: 100% !important;
     }
     
+    /* ヘッダー内のテキスト自体の配置 */
+    div[data-testid="column-header-content"] p {
+        width: 100% !important;
+        text-align: center !important;
+    }
+
     /* データフレーム内のテキストアライメントの補助 */
     [data-testid="stDataFrame"] {
         text-align: center !important;
@@ -97,7 +107,7 @@ def main():
     # 全データの取得
     all_data = load_data_cached()
     
-    # ニックネームの特定（最新の登録を優先、なければ社員番号）
+    # ニックネームの特定（最新の有効なニックネームを優先）
     latest_nicks = {}
     if not all_data.empty:
         rdf_sorted = all_data.sort_values("entry_date", ascending=True)
@@ -107,7 +117,6 @@ def main():
             if nick.strip() != "" and nick != eid and nick != "nan" and nick != "0":
                 latest_nicks[eid] = nick
 
-    # ユーザー表示名とポイント累計
     current_nickname = latest_nicks.get(str(saved_emp_id), str(saved_emp_id))
     user_records = all_data[all_data['real_name'].astype(str) == str(saved_emp_id)].copy()
     user_records['points'] = pd.to_numeric(user_records['points'], errors='coerce').fillna(0)
@@ -117,8 +126,10 @@ def main():
 
     # --- タブ1: 記録 ---
     with tab1:
+        # ポイント前後に半角スペースを挿入
         st.write(f"### {current_nickname}さんのこれまでのポイントは {user_total_pts:g} です")
         
+        # 7日前まで遡って登録可能なカレンダー
         target_date = st.date_input("対象日（７日前まで遡って登録、修正が出来ます）", 
                                      value=date.today(), 
                                      min_value=date.today()-timedelta(days=7), 
@@ -154,6 +165,7 @@ def main():
 
             st.divider()
             day_count = n_inv - n_debt
+            # 表記変更：ポイント累計
             st.metric("本日のポイント累計", f"{day_count:+d} アクション")
 
             if st.button("この内容で登録する", type="primary"):
@@ -177,7 +189,7 @@ def main():
                     st.rerun()
         record_ui()
 
-    # --- タブ2: ランキング ---
+    # --- タブ2: ランキング (センタリングを徹底) ---
     with tab2:
         st.markdown("<h3 style='text-align: center;'>🏆 累計ポイントランキング</h3>", unsafe_allow_html=True)
         
@@ -194,7 +206,7 @@ def main():
             summary = summary.sort_values("順位").reset_index(drop=True)
             summary = summary[["順位", "ニックネーム", "ポイント累計"]]
             
-            # データフレーム表示（センタリング設定を適用）
+            # データフレーム表示（ヘッダーとデータのセンタリングを指定）
             st.dataframe(
                 summary, 
                 use_container_width=True, 

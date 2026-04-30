@@ -13,50 +13,54 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 # 【秘密の合言葉】
 SECRET_AUTH_CODE = "feelist2026" 
 
-# デザインCSS（カレンダーの列・隙間・ボタンを「強制的に」最小化）
+# デザインCSS（カレンダーの列を強制的に35px幅に固定）
 st.markdown("""
     <style>
-    /* 1. 記録画面のステータスカード（PCで2列、星が綺麗に見えるように復元） */
+    /* 1. 記録画面：ステータスカード（PCで2列、星が綺麗に見えるように） */
     .status-card {
         border: 1px solid #e6e9ef; border-radius: 15px; padding: 15px; text-align: center;
-        background-color: white; margin-bottom: 10px; min-height: 120px;
+        background-color: white; margin-bottom: 10px;
     }
     .star-display { font-size: 26px; letter-spacing: 2px; margin: 5px 0; font-family: monospace; }
     .status-label { font-size: 16px; font-weight: bold; margin-bottom: 5px; }
     .status-count { font-size: 14px; color: #5e6064; }
 
-    /* 2. カレンダーの「列」と「隙間」を強制的に詰める（Nuclear Option） */
-    /* カレンダーの日付ボタン（btn_から始まるキー）を持つカラムだけを幅30pxに固定 */
-    div[data-testid="column"]:has(button[key*="btn_"]) {
-        min-width: 32px !important;
-        max-width: 32px !important;
-        width: 32px !important;
+    /* 2. 【究極修正】カレンダーの「列」そのものを35pxに固定して中央に寄せる */
+    /* カレンダーボタン(keyにbtn_を含む)が入っている親要素(stHorizontalBlock)を特定 */
+    div[data-testid="stHorizontalBlock"]:has(button[key*="btn_"]) {
+        display: flex !important;
+        flex-direction: row !important;
+        justify-content: center !important; /* 中央に寄せる */
+        gap: 3px !important; /* 隙間を3pxに固定 */
+        flex-wrap: nowrap !important;
+    }
+
+    /* その中にある7つの列(column)を、画面幅に関わらず35px幅に固定 */
+    div[data-testid="stHorizontalBlock"]:has(button[key*="btn_"]) div[data-testid="column"] {
+        flex: 0 0 35px !important; /* 伸びるな、縮むな、35px固定 */
+        width: 35px !important;
+        min-width: 35px !important;
         padding: 0px !important;
         margin: 0px !important;
     }
-    
-    /* カレンダーボタンの親ブロックの隙間をゼロにする */
-    div[data-testid="stHorizontalBlock"]:has(button[key*="btn_"]) {
-        gap: 0px !important;
-        justify-content: center !important;
-    }
 
-    /* ボタン自体を32pxの正方形に強制し、余白を剥ぎ取る */
+    /* ボタン自体も35pxの正方形にする */
     div[data-testid="stHorizontalBlock"] button[key*="btn_"] {
         padding: 0px !important;
         margin: 0px !important;
         font-size: 11px !important;
-        min-height: 32px !important;
-        height: 32px !important;
-        width: 32px !important;
+        min-height: 35px !important;
+        height: 35px !important;
+        width: 35px !important;
         border-radius: 4px !important;
         border: 1px solid #f0f2f6 !important;
+        line-height: 1 !important;
         display: flex !important;
         justify-content: center !important;
         align-items: center !important;
     }
     
-    .cal-day-header { text-align: center; font-weight: bold; font-size: 10px; color: #666; width: 32px; }
+    .cal-day-header { text-align: center; font-weight: bold; font-size: 10px; color: #666; width: 35px; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -64,7 +68,7 @@ st.markdown("""
 def make_hash(password):
     return hashlib.sha256(str.encode(password)).hexdigest()
 
-# 文字列クリーニング
+# 文字列クリーニング（.0 / None 徹底排除）
 def clean_string_strictly(x):
     s = str(x).strip()
     if '.' in s: s = s.split('.')[0]
@@ -161,7 +165,7 @@ def main():
 
     tab1, tab2, tab3, tab4 = st.tabs(["今日の記録", "ランキング", "マイデータ", "設定"])
 
-    # --- 今日の記録（星表示パーツ完全復旧） ---
+    # --- 今日の記録 ---
     with tab1:
         pts = pd.to_numeric(user_records['points'], errors='coerce').fillna(0).sum()
         st.write(f"### {current_nickname}さんの累計ポイント: {pts:g}")
@@ -182,8 +186,7 @@ def main():
             
             n_inv, n_debt = len(sel_inv), len(sel_debt)
             inv_s, debt_s = "★" * min(n_inv, 10) + "☆" * max(0, 10 - n_inv), "★" * min(n_debt, 10) + "☆" * max(0, 10 - n_debt)
-            inv_l = f"{n_inv}個実施！" if n_inv <= 10 else "10個以上実施！"
-            debt_l = f"{n_debt}個実施！" if n_debt <= 10 else "10個以上実施！"
+            inv_l, debt_l = (f"{n_inv}個実施！" if n_inv <= 10 else "10個以上実施！"), (f"{n_debt}個実施！" if n_debt <= 10 else "10個以上実施！")
             
             with status_p.container():
                 sc1, sc2 = st.columns(2)
@@ -202,7 +205,7 @@ def main():
                 st.cache_data.clear(); st.balloons(); st.rerun()
         record_ui()
 
-    # --- マイデータ（カレンダー凝縮） ---
+    # --- マイデータ（カレンダー幅・強制固定） ---
     with tab3:
         st.subheader("🗓 カレンダー履歴")
         if 'cal_y' not in st.session_state: st.session_state.cal_y, st.session_state.cal_m = date.today().year, date.today().month
@@ -226,13 +229,13 @@ def main():
         
         recorded_dates = user_records['date'].unique().tolist() if not user_records.empty else []
         for week in cal:
-            cols = st.columns(7)
+            cols = st.columns(7) # 7列生成
             for i, day in enumerate(week):
                 if day != 0:
                     t_str = f"{st.session_state.cal_y}-{st.session_state.cal_m:02d}-{day:02d}"
                     has_d = t_str in recorded_dates
                     btn_label = f"{day}🔵" if has_d else f"{day}"
-                    # カレンダー専用のキーを割り当ててCSSで狙い撃ち
+                    # ボタンのkeyに'btn_'を含めることでCSSのターゲットにする
                     if cols[i].button(btn_label, key=f"btn_{t_str}", disabled=not has_d):
                         st.session_state.sel_d = t_str
         
@@ -257,7 +260,7 @@ def main():
             sum_df = sum_df.merge(master_data[['emp_id', 'nickname']], left_on='real_name', right_on='emp_id', how='left')
             sum_df['名'] = sum_df['nickname'].apply(clean_string_strictly).replace('', None).fillna(sum_df['real_name'])
             sum_df["順位"] = sum_df["points"].rank(ascending=False, method='min').astype(int)
-            st.dataframe(sum_df.sort_values("順位")[["順位", "名", "points"]], use_container_width=True, hide_index=True)
+            st.dataframe(sum_df.sort_values("順位")[["順位", "名", "points"]], use_container_width=True, hide_index=True, column_config={"順位": st.column_config.NumberColumn(alignment="left"), "points": st.column_config.NumberColumn("累計", format="%d", alignment="left")})
 
 if __name__ == "__main__":
     main()

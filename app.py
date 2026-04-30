@@ -10,10 +10,10 @@ import calendar
 st.set_page_config(page_title="Dopamine Tracker", layout="wide")
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-# カスタムCSS：センタリングを最優先したスタイル設定
+# 【最重要】ヘッダーのタイトルを中央に寄せるための徹底的なCSS調整
 st.markdown("""
     <style>
-    /* カードと基本パーツのセンタリング */
+    /* 1. カードと基本パーツのセンタリング */
     .status-card {
         border: 1px solid #e6e9ef;
         border-radius: 15px;
@@ -28,25 +28,23 @@ st.markdown("""
     .status-count { font-size: 14px; color: #5e6064; }
     .cal-day-header { text-align: center; font-weight: bold; padding: 5px; border-bottom: 1px solid #eee; }
     
-    /* 【最重要】ランキング表のヘッダー（タイトル欄）を中央に強制配置 */
-    /* 複数の内部クラスをターゲットにして確実にセンタリングします */
-    div[data-testid="column-header-content"],
-    div[class*="StyledColumnHeaderContent"],
-    div[class*="header-content"] {
+    /* 2. ランキング表のヘッダー（タイトル欄）を強制的にセンタリング */
+    /* ヘッダー内部のフレックスコンテナを中央寄せにする */
+    [data-testid="stDataFrame"] div[data-testid="column-header-content"] {
         display: flex !important;
         justify-content: center !important;
         text-align: center !important;
         width: 100% !important;
     }
-    
-    /* ヘッダー内のテキスト自体の配置 */
-    div[data-testid="column-header-content"] p {
-        width: 100% !important;
+
+    /* ヘッダー内のテキスト要素そのものを中央寄せにする */
+    [data-testid="stDataFrame"] div[data-testid="column-header-content"] p {
         text-align: center !important;
+        flex: 1 !important;
     }
 
-    /* データフレーム内のテキストアライメントの補助 */
-    [data-testid="stDataFrame"] {
+    /* セル内のデータも中央寄せにする補助設定 */
+    [data-testid="stDataFrame"] div[class*="StyledTableCell"] {
         text-align: center !important;
     }
     </style>
@@ -95,7 +93,7 @@ def main():
         
         if st.button("認証"):
             if not u_emp_id or not u_pass:
-                st.error("社員番号とパスワードを入力してください。")
+                st.error("認証情報を入力してください。")
             else:
                 st.query_params.update(eid=u_emp_id)
                 st.rerun()
@@ -104,10 +102,9 @@ def main():
         st.warning("左側のサイドバーで社員番号とパスワードを入力し、認証ボタンを押してください。")
         return
 
-    # 全データの取得
     all_data = load_data_cached()
     
-    # ニックネームの特定（最新の有効なニックネームを優先）
+    # 社員番号ごとの「最新のニックネーム」対応表を作成
     latest_nicks = {}
     if not all_data.empty:
         rdf_sorted = all_data.sort_values("entry_date", ascending=True)
@@ -117,19 +114,21 @@ def main():
             if nick.strip() != "" and nick != eid and nick != "nan" and nick != "0":
                 latest_nicks[eid] = nick
 
+    # 表示用ニックネームの特定
     current_nickname = latest_nicks.get(str(saved_emp_id), str(saved_emp_id))
+    
+    # ユーザー個別の記録抽出
     user_records = all_data[all_data['real_name'].astype(str) == str(saved_emp_id)].copy()
     user_records['points'] = pd.to_numeric(user_records['points'], errors='coerce').fillna(0)
     user_total_pts = user_records['points'].sum()
 
     tab1, tab2, tab3, tab4 = st.tabs(["📊 今日の記録", "🏆 ランキング", "📈 マイデータ", "⚙️ 設定"])
 
-    # --- タブ1: 記録 ---
+    # --- タブ1: 今日の記録 ---
     with tab1:
-        # ポイント前後に半角スペースを挿入
         st.write(f"### {current_nickname}さんのこれまでのポイントは {user_total_pts:g} です")
         
-        # 7日前まで遡って登録可能なカレンダー
+        # ご要望：7日前まで遡って登録可能
         target_date = st.date_input("対象日（７日前まで遡って登録、修正が出来ます）", 
                                      value=date.today(), 
                                      min_value=date.today()-timedelta(days=7), 
@@ -165,7 +164,7 @@ def main():
 
             st.divider()
             day_count = n_inv - n_debt
-            # 表記変更：ポイント累計
+            # ご要望：ポイント累計と表示
             st.metric("本日のポイント累計", f"{day_count:+d} アクション")
 
             if st.button("この内容で登録する", type="primary"):
@@ -189,7 +188,7 @@ def main():
                     st.rerun()
         record_ui()
 
-    # --- タブ2: ランキング (センタリングを徹底) ---
+    # --- タブ2: ランキング (タイトル行も含めセンタリング徹底) ---
     with tab2:
         st.markdown("<h3 style='text-align: center;'>🏆 累計ポイントランキング</h3>", unsafe_allow_html=True)
         
@@ -199,14 +198,15 @@ def main():
             rdf["表示名"] = rdf["real_name"].astype(str).map(lambda x: latest_nicks.get(x, x))
             
             summary = rdf.groupby("表示名")["points"].sum().reset_index()
+            # ご要望：ポイント累計
             summary = summary.rename(columns={"points": "ポイント累計", "表示名": "ニックネーム"})
             
-            # 競技方式順位 (1, 2, 2, 5)
+            # ご要望：競技方式順位 (1, 2, 2, 5)
             summary["順位"] = summary["ポイント累計"].rank(ascending=False, method='min').astype(int)
             summary = summary.sort_values("順位").reset_index(drop=True)
             summary = summary[["順位", "ニックネーム", "ポイント累計"]]
             
-            # データフレーム表示（ヘッダーとデータのセンタリングを指定）
+            # データフレーム表示（各カラムのalignmentをcenterに設定）
             st.dataframe(
                 summary, 
                 use_container_width=True, 

@@ -10,7 +10,7 @@ import calendar
 st.set_page_config(page_title="Dopamine Tracker", layout="wide")
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-# カスタムCSS：ステータスカードとカレンダーのデザイン
+# カスタムCSS
 st.markdown("""
     <style>
     .status-card {
@@ -22,19 +22,9 @@ st.markdown("""
         background-color: white;
         margin-bottom: 10px;
     }
-    .star-display {
-        font-size: 26px;
-        letter-spacing: 2px;
-        margin: 5px 0;
-    }
-    .status-label {
-        font-size: 16px;
-        font-weight: bold;
-    }
-    .status-count {
-        font-size: 14px;
-        color: #5e6064;
-    }
+    .star-display { font-size: 26px; letter-spacing: 2px; margin: 5px 0; }
+    .status-label { font-size: 16px; font-weight: bold; }
+    .status-count { font-size: 14px; color: #5e6064; }
     .cal-day-header { text-align: center; font-weight: bold; padding: 5px; border-bottom: 1px solid #eee; }
     </style>
     """, unsafe_allow_html=True)
@@ -47,7 +37,6 @@ def load_data_cached():
     try:
         return conn.read(worksheet="Records", ttl="1m")
     except:
-        # 初期列構成：投資型と借金型を分けて保存
         return pd.DataFrame(columns=["real_name", "password", "nickname", "team", "date", "points", "total_points", "entry_date", "investment_items", "debt_items"])
 
 # --- 2. リスト・マスタ定義 ---
@@ -69,45 +58,48 @@ DEBT_ITEMS = [
     "無駄な出費", "独り言が多かった", "倫理観に欠ける行動（電車で席を譲らない、夜にゴミを出す等）"
 ]
 
-TEAM_OPTIONS = ["-- 選択してください --", "経営層", "第一システム部", "第二システム部", "第三システム部", "第四システム部", "営業部", "総務部", "新人"]
-
 # --- 3. メイン処理 ---
 def main():
     st.title("Dopamine Tracker")
     st.subheader("今日の行動を記録して、脳の健康状態を可視化しましょう")
     
-    saved_real_name = st.query_params.get("rn", "")
-    saved_nickname = st.query_params.get("nn", "")
-    saved_team = st.query_params.get("t", TEAM_OPTIONS[0])
+    # URLパラメータから社員番号を取得
+    saved_emp_id = st.query_params.get("eid", "")
     
     with st.sidebar:
         st.header("🔑 ユーザー認証")
-        u_real_name = st.text_input("氏名（実名）", value=saved_real_name)
+        u_emp_id = st.text_input("社員番号(4桁)", value=saved_emp_id, max_chars=4)
         u_pass = st.text_input("パスワード", type="password")
-        u_nickname = st.text_input("ニックネーム", value=saved_nickname)
-        t_name = st.selectbox("所属チーム", TEAM_OPTIONS, index=TEAM_OPTIONS.index(saved_team) if saved_team in TEAM_OPTIONS else 0)
         
         if st.button("認証"):
-            if not u_real_name or not u_pass or not u_nickname or t_name == TEAM_OPTIONS[0]:
+            if not u_emp_id or not u_pass:
                 st.error("全項目を入力してください。")
             else:
-                st.query_params.update(rn=u_real_name, nn=u_nickname, t=t_name)
+                st.query_params.update(eid=u_emp_id)
                 st.rerun()
 
-    if not (saved_real_name and saved_nickname and u_pass):
-        st.warning("左側のサイドバーで情報を入力し、認証ボタンを押してください。")
+    if not (saved_emp_id and u_pass):
+        st.warning("左側のサイドバーで社員番号とパスワードを入力し、認証ボタンを押してください。")
         return
 
     all_data = load_data_cached()
-    user_records = all_data[all_data['real_name'] == saved_real_name].copy()
+    # 社員番号（real_name列）でフィルタ
+    user_records = all_data[all_data['real_name'] == saved_emp_id].copy()
     user_total_pts = user_records['points'].sum()
+    
+    # ニックネームの取得（最新のレコードから取得、なければ社員番号を表示）
+    current_nickname = saved_emp_id
+    if not user_records.empty:
+        # 最新のニックネームが空でないものを探す
+        nick_list = user_records[user_records['nickname'].notna()]['nickname'].tolist()
+        if nick_list:
+            current_nickname = nick_list[-1]
 
-    tab1, tab2, tab3 = st.tabs(["📊 今日の記録", "🏆 ランキング", "📈 マイデータ"])
+    tab1, tab2, tab3, tab4 = st.tabs(["📊 今日の記録", "🏆 ランキング", "📈 マイデータ", "⚙️ 設定"])
 
     # --- タブ1: 記録 ---
     with tab1:
-        # ポイントの前後に半角スペースを追加
-        st.write(f"### {saved_nickname}さんのこれまでのポイントは {user_total_pts:g} です")
+        st.write(f"### {current_nickname}さんのこれまでのポイントは {user_total_pts:g} です")
         target_date = st.date_input("対象日（２日前まで修正可）", value=date.today(), min_value=date.today()-timedelta(days=2), max_value=date.today())
 
         @st.fragment
@@ -125,8 +117,6 @@ def main():
             n_inv, n_debt = len(sel_inv), len(sel_debt)
             inv_stars = "★" * min(n_inv, 10) + "☆" * max(0, 10 - n_inv)
             debt_stars = "★" * min(n_debt, 10) + "☆" * max(0, 10 - n_debt)
-            
-            # 指定のラベルロジック
             inv_label = f"{n_inv}個実施" if n_inv <= 10 else "10個以上実施"
             debt_label = f"{n_debt}個実施" if n_debt <= 10 else "10個以上実施"
 
@@ -143,28 +133,24 @@ def main():
             day_count = n_inv - n_debt
             st.metric("本日の収支累計", f"{day_count:+d} アクション")
 
-            if st.button("この内容で決算する", type="primary"):
+            # ボタン名を「この内容で登録する」に変更
+            if st.button("この内容で登録する", type="primary"):
                 with st.spinner("送信中..."):
                     current_all_data = conn.read(worksheet="Records", ttl="0s")
-                    past_points = current_all_data[(current_all_data['real_name'] == saved_real_name) & (current_all_data['date'] != str(target_date))]['points'].sum()
+                    past_points = current_all_data[(current_all_data['real_name'] == saved_emp_id) & (current_all_data['date'] != str(target_date))]['points'].sum()
                     
                     new_row = pd.DataFrame([{
-                        "real_name": saved_real_name, "password": make_hash(u_pass), "nickname": saved_nickname, 
-                        "team": saved_team, "date": str(target_date), "points": day_count, 
+                        "real_name": saved_emp_id, "password": make_hash(u_pass), "nickname": current_nickname, 
+                        "team": "", "date": str(target_date), "points": day_count, 
                         "total_points": past_points + day_count, "entry_date": str(date.today()),
-                        "investment_items": ", ".join(sel_inv),
-                        "debt_items": ", ".join(sel_debt)
+                        "investment_items": ", ".join(sel_inv), "debt_items": ", ".join(sel_debt)
                     }])
                     
-                    # 旧形式の列がある場合は整理
-                    if 'selected_items' in current_all_data.columns:
-                        current_all_data = current_all_data.drop(columns=['selected_items'])
-                        
-                    updated_df = pd.concat([current_all_data[~((current_all_data['real_name'] == saved_real_name) & (current_all_data['date'] == str(target_date)))], new_row]).reset_index(drop=True)
+                    updated_df = pd.concat([current_all_data[~((current_all_data['real_name'] == saved_emp_id) & (current_all_data['date'] == str(target_date)))], new_row]).reset_index(drop=True)
                     conn.update(worksheet="Records", data=updated_df)
                     st.cache_data.clear()
                     st.balloons()
-                    st.success("決算が完了しました！")
+                    st.success("登録が完了しました！")
                     time.sleep(2)
                     st.rerun()
         record_ui()
@@ -173,97 +159,84 @@ def main():
     with tab2:
         st.subheader("🏆 累計アクション収支ランキング")
         if not all_data.empty:
-            rdf = all_data.groupby(['nickname', 'team'])['points'].sum().reset_index()
-            st.dataframe(rdf.sort_values("points", ascending=False).rename(columns={'points':'累計収支'}), use_container_width=True, hide_index=True)
+            rdf = all_data.groupby(['nickname', 'real_name'])['points'].sum().reset_index()
+            # 表示用にカラム名を調整
+            rdf = rdf.rename(columns={'nickname': 'ニックネーム', 'real_name': '社員番号', 'points': '累計収支'})
+            st.dataframe(rdf.sort_values("累計収支", ascending=False), use_container_width=True, hide_index=True)
 
     # --- タブ3: マイデータ ---
     with tab3:
         st.subheader("🗓 履歴カレンダー")
-        
         if 'cal_year' not in st.session_state:
-            st.session_state.cal_year = date.today().year
-            st.session_state.cal_month = date.today().month
-        if 'selected_cal_date' not in st.session_state:
-            st.session_state.selected_cal_date = None
-        if 'show_all_history' not in st.session_state:
-            st.session_state.show_all_history = False
-
-        # 月ナビゲーション
+            st.session_state.cal_year, st.session_state.cal_month = date.today().year, date.today().month
+        
         nav_col1, nav_col2, nav_col3 = st.columns([1, 2, 1])
         with nav_col1:
             if st.button("⬅️ 前の月"):
                 st.session_state.cal_month -= 1
-                if st.session_state.cal_month == 0:
-                    st.session_state.cal_month = 12
-                    st.session_state.cal_year -= 1
+                if st.session_state.cal_month == 0: st.session_state.cal_month, st.session_state.cal_year = 12, st.session_state.cal_year - 1
                 st.rerun()
-        with nav_col2:
-            st.markdown(f"<h3 style='text-align: center;'>{st.session_state.cal_year}年 {st.session_state.cal_month}月</h3>", unsafe_allow_html=True)
+        with nav_col2: st.markdown(f"<h3 style='text-align: center;'>{st.session_state.cal_year}年 {st.session_state.cal_month}月</h3>", unsafe_allow_html=True)
         with nav_col3:
             if st.button("次の月 ➡️"):
                 st.session_state.cal_month += 1
-                if st.session_state.cal_month == 13:
-                    st.session_state.cal_month = 1
-                    st.session_state.cal_year += 1
+                if st.session_state.cal_month == 13: st.session_state.cal_month, st.session_state.cal_year = 1, st.session_state.cal_year + 1
                 st.rerun()
 
-        # カレンダー生成
         cal = calendar.monthcalendar(st.session_state.cal_year, st.session_state.cal_month)
-        days = ["月", "火", "水", "木", "金", "土", "日"]
         cols = st.columns(7)
-        for i, d in enumerate(days):
-            cols[i].markdown(f"<div class='cal-day-header'>{d}</div>", unsafe_allow_html=True)
+        for i, d in enumerate(["月", "火", "水", "木", "金", "土", "日"]): cols[i].markdown(f"<div class='cal-day-header'>{d}</div>", unsafe_allow_html=True)
 
         for week in cal:
             cols = st.columns(7)
             for i, day in enumerate(week):
-                if day == 0:
-                    cols[i].write("")
-                else:
+                if day != 0:
                     target_str = f"{st.session_state.cal_year}-{st.session_state.cal_month:02d}-{day:02d}"
                     has_data = not user_records[user_records['date'] == target_str].empty
-                    label = f"{day} 🔴" if has_data else f"{day}"
-                    if cols[i].button(label, key=f"btn_{target_str}", use_container_width=True):
+                    if cols[i].button(f"{day} 🔴" if has_data else f"{day}", key=f"btn_{target_str}", use_container_width=True):
                         st.session_state.selected_cal_date = target_str
 
-        # 日別の詳細表示
-        if st.session_state.selected_cal_date:
+        if st.session_state.get('selected_cal_date'):
             st.divider()
             detail = user_records[user_records['date'] == st.session_state.selected_cal_date]
             if not detail.empty:
                 st.markdown(f"#### 📅 {st.session_state.selected_cal_date} の詳細")
                 st.write(f"**収支ポイント:** {detail.iloc[0]['points']:+g}")
-                
-                det_c1, det_c2 = st.columns(2)
-                with det_c1:
-                    st.write("**🟢 投資型項目:**")
-                    inv_raw = detail.iloc[0].get('investment_items', "")
-                    st.write(str(inv_raw) if pd.notna(inv_raw) and str(inv_raw) != "" else "なし")
-                with det_c2:
-                    st.write("**🔴 借金型項目:**")
-                    debt_raw = detail.iloc[0].get('debt_items', "")
-                    st.write(str(debt_raw) if pd.notna(debt_raw) and str(debt_raw) != "" else "なし")
-            else:
-                st.info(f"{st.session_state.selected_cal_date} のデータはありません。")
+                c1, c2 = st.columns(2)
+                with c1: st.write("**🟢 投資型:**"); st.write(detail.iloc[0].get('investment_items', "なし"))
+                with c2: st.write("**🔴 借金型:**"); st.write(detail.iloc[0].get('debt_items', "なし"))
+            else: st.info("データはありません。")
 
-        # 全履歴表示
         st.divider()
-        if st.button("全ての履歴を表示／非表示"):
-            st.session_state.show_all_history = not st.session_state.show_all_history
+        if st.button("全ての履歴を表示／非表示"): st.session_state.show_history = not st.session_state.get('show_history', False)
+        if st.session_state.get('show_history'):
+            st.dataframe(user_records.sort_values("date", ascending=False)[['date', 'points', 'investment_items', 'debt_items']].rename(columns={'date':'日付','points':'収支','investment_items':'投資型','debt_items':'借金型'}), hide_index=True, use_container_width=True)
 
-        if st.session_state.show_all_history:
-            if not user_records.empty:
-                st.markdown("#### 📋 全登録データ一覧")
-                h_df = user_records.sort_values("date", ascending=False).copy()
-                st.dataframe(
-                    h_df[['date', 'points', 'investment_items', 'debt_items']].rename(
-                        columns={'date': '日付', 'points': '収支', 'investment_items': '投資型項目', 'debt_items': '借金型項目'}
-                    ),
-                    hide_index=True,
-                    use_container_width=True
-                )
+    # --- タブ4: ユーザー設定（社員番号とニックネームの紐づけ） ---
+    with tab4:
+        st.subheader("⚙️ ユーザー設定")
+        st.info(f"現在の社員番号: {saved_emp_id}")
+        new_nick = st.text_input("ニックネームの登録・変更", value=current_nickname if current_nickname != saved_emp_id else "")
+        
+        if st.button("設定を保存"):
+            if new_nick:
+                with st.spinner("更新中..."):
+                    current_all_data = conn.read(worksheet="Records", ttl="0s")
+                    # ユーザーの全レコードのニックネームを一括更新（または新規登録用ダミーを作成）
+                    if saved_emp_id in current_all_data['real_name'].values:
+                        current_all_data.loc[current_all_data['real_name'] == saved_emp_id, 'nickname'] = new_nick
+                    else:
+                        # まだ一度も記録がない場合、ニックネーム登録用の空レコードを作成
+                        dummy_row = pd.DataFrame([{"real_name": saved_emp_id, "password": make_hash(u_pass), "nickname": new_nick, "date": "SETTING", "points": 0, "total_points": 0, "entry_date": str(date.today())}])
+                        current_all_data = pd.concat([current_all_data, dummy_row])
+                    
+                    conn.update(worksheet="Records", data=current_all_data)
+                    st.cache_data.clear()
+                    st.success("ニックネームを設定しました！")
+                    time.sleep(1)
+                    st.rerun()
             else:
-                st.info("データがまだありません。")
+                st.error("ニックネームを入力してください。")
 
 if __name__ == "__main__":
     main()

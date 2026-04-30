@@ -13,7 +13,7 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 # 【秘密の合言葉】
 SECRET_AUTH_CODE = "feelist2026" 
 
-# デザインCSS（カレンダーを限界まで凝縮）
+# デザインCSS（カレンダーをパズルのように密着させる）
 st.markdown("""
     <style>
     /* 共通：ステータスカード */
@@ -24,38 +24,37 @@ st.markdown("""
     .star-display { font-size: 26px; letter-spacing: 2px; margin: 5px 0; font-family: monospace; }
     .status-label { font-size: 16px; font-weight: bold; margin-bottom: 5px; }
     .status-count { font-size: 14px; color: #5e6064; }
-    .cal-day-header { text-align: center; font-weight: bold; font-size: 10px; color: #666; margin-bottom: 2px; }
+    .cal-day-header { text-align: center; font-weight: bold; font-size: 10px; color: #666; width: 30px; }
 
-    /* 【最重要】カレンダーの7列ブロックのみ、間隔をぎりぎりまで詰める */
+    /* 【超重要】カレンダーの7列ブロックの隙間と余白を完全にゼロにする */
     div[data-testid="stHorizontalBlock"]:has(div[data-testid="column"]:nth-child(7)) {
-        display: flex !important;
+        gap: 0px !important;
         justify-content: center !important;
-        flex-wrap: nowrap !important;
-        gap: 1px !important; /* 隙間を最小の1pxに */
     }
 
-    /* 各列の幅を極小化し、パディングを消去 */
     div[data-testid="stHorizontalBlock"]:has(div[data-testid="column"]:nth-child(7)) div[data-testid="column"] {
-        flex: 0 0 32px !important;
-        width: 32px !important;
-        min-width: 32px !important;
-        max-width: 32px !important;
-        padding: 0px !important; /* 列の外側の余白をゼロに */
-    }
-    
-    /* 列内部のコンテナの余白もゼロに */
-    div[data-testid="stHorizontalBlock"]:has(div[data-testid="column"]:nth-child(7)) div[data-testid="column"] > div {
+        flex: 0 0 30px !important;
+        width: 30px !important;
+        min-width: 30px !important;
         padding: 0px !important;
+        margin: 0px !important;
     }
 
-    /* 日付ボタンのデザイン：余白を消してサイズを固定 */
+    /* ボタン内部の余白を消し、隣と密着させる */
     div[data-testid="stHorizontalBlock"]:has(div[data-testid="column"]:nth-child(7)) button {
         padding: 0px !important;
+        margin: 0px !important;
         font-size: 10px !important;
-        min-height: 32px !important;
-        height: 32px !important;
-        border-radius: 2px !important; /* 角丸を少し鋭角に */
-        border: 1px solid #f0f2f6 !important;
+        min-height: 30px !important;
+        height: 30px !important;
+        width: 30px !important;
+        border-radius: 0px !important; /* 角丸をなくして密着感を出す */
+        border: 0.1px solid #eee !important;
+    }
+
+    /* 🔵マークのサイズも調整 */
+    span.st-emotion-cache-10trblm {
+        font-size: 8px !important;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -105,7 +104,7 @@ def load_data_cached(sheet_name):
 
 # 項目リスト
 INVESTMENT_ITEMS = ["料理", "掃除", "睡眠が8時間以上", "湯舟に入浴、サウナ", "朝10分前に出社", "身体を動かした", "健康的な食生活", "洗濯", "ニュースをみる", "学習", "読書", "創作", "音楽", "挨拶", "感謝", "家族との時間", "植物", "ペット", "挑戦"]
-DEBT_ITEMS = ["外食オンリー", "掃除なし", "睡眠不足", "シャワーのみ", "朝ギリギリ", "1日ゴロゴロ", "ギルティ食", "アルコール", "タバコ", "スマホ2h+", "映像2h+", "SNS2h+", "ゲーム2h+", "ソシャゲ起動", "ゲーム課金", "ギャンブル", "無駄遣い", "独り言", "倫理欠如"]
+DEBT_ITEMS = ["外食オンリー", "掃除なし", "睡眠不足", "シャワーのみ", "朝ギリギリ", "1日ゴコロ", "ギルティ食", "アルコール", "タバコ", "スマホ2h+", "映像2h+", "SNS2h+", "ゲーム2h+", "ソシャゲ起動", "ゲーム課金", "ギャンブル", "無駄遣い", "独り言", "倫理欠如"]
 
 # --- 2. メイン認証 ---
 def main():
@@ -226,7 +225,7 @@ def main():
                 st.session_state.cal_m -= 1
                 if st.session_state.cal_m == 0: st.session_state.cal_m, st.session_state.cal_y = 12, st.session_state.cal_y - 1
                 st.rerun()
-        with c2: st.markdown(f"<h3 style='text-align:center;'>{st.session_state.cal_y}年 {st.session_state.cal_m}月</h3>", unsafe_allow_html=True)
+        with c2: st.markdown(f"<p style='text-align:center; font-weight:bold; font-size:14px; margin:0;'>{st.session_state.cal_y}年 {st.session_state.cal_m}月</p>", unsafe_allow_html=True)
         with c3:
             if st.button("➡️", key="next"):
                 st.session_state.cal_m += 1
@@ -245,7 +244,9 @@ def main():
                 if day != 0:
                     t_str = f"{st.session_state.cal_y}-{st.session_state.cal_m:02d}-{day:02d}"
                     has_d = t_str in recorded_dates
-                    if cols[i].button(f"{day}\n🔵" if has_d else f"{day}", key=f"btn_{t_str}", disabled=not has_d):
+                    # 改行をなくし、ボタン内のテキストも極小化
+                    btn_label = f"{day}🔵" if has_d else f"{day}"
+                    if cols[i].button(btn_label, key=f"btn_{t_str}", disabled=not has_d):
                         st.session_state.sel_d = t_str
         
         if st.session_state.get('sel_d'):
@@ -275,4 +276,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-    

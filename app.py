@@ -31,11 +31,19 @@ st.markdown("""
 def make_hash(password):
     return hashlib.sha256(str.encode(password)).hexdigest()
 
-# 文字列クリーニング
+# 文字列クリーニング（.0を徹底排除）
 def clean_string_strictly(x):
     s = str(x).strip()
     if '.' in s: s = s.split('.')[0]
-    if s.lower() == "nan" or s == "" or s == "none": return ""
+    if s.lower() in ["nan", "none", "", "none"]: return ""
+    return s
+
+# 表示用フォーマッタ（空なら全角ハイフンにする）
+def display_format(val):
+    if pd.isna(val): return "－"
+    s = str(val).strip()
+    if s.lower() in ["nan", "none", "", "null", "undefined"]:
+        return "－"
     return s
 
 # ID正規化
@@ -72,13 +80,11 @@ DEBT_ITEMS = ["外食オンリー", "掃除なし", "睡眠不足", "シャワ�
 
 # --- 2. メイン処理 ---
 def main():
-    # セッション状態の初期化
     if 'authenticated' not in st.session_state:
         st.session_state.authenticated = False
         st.session_state.current_user = None
     if 'last_logged_id' not in st.session_state:
         st.session_state.last_logged_id = ""
-    # 【重要】選択肢クリア用のバージョン管理
     if 'form_version' not in st.session_state:
         st.session_state.form_version = 0
 
@@ -128,7 +134,7 @@ def main():
                             else: st.error("パスワードが違います。")
         st.stop()
 
-    # --- 認証済み：データ準備 ---
+    # --- 認証済みデータ準備 ---
     current_emp_id = st.session_state.current_user
     master_data = load_data_cached("UserMaster")
     user_info = master_data[master_data['emp_id'] == current_emp_id].iloc[0]
@@ -157,8 +163,6 @@ def main():
             st.divider()
             status_placeholder = st.empty()
             col_inv, col_debt = st.columns(2)
-            
-            # 【重要】keyに form_version を含めることで一括クリアを可能にする
             v = st.session_state.form_version
             with col_inv:
                 st.markdown("#### 🟢 投資型")
@@ -191,10 +195,7 @@ def main():
                     }])
                     others = db[~((db['real_name'] == current_emp_id) & (db['date'] == str(target_date)))]
                     conn.update(worksheet="Records", data=pd.concat([others, new_row]).reset_index(drop=True).astype(str))
-                    
-                    # 【解決策】直接値を書き換えず、バージョンを上げて「リセット」する
                     st.session_state.form_version += 1
-                    
                     st.cache_data.clear(); st.balloons(); st.success("登録完了！"); time.sleep(1); st.rerun()
         record_ui()
 
@@ -246,7 +247,8 @@ def main():
                 if day != 0:
                     t_str = f"{st.session_state.cal_y}-{st.session_state.cal_m:02d}-{day:02d}"
                     has_d = t_str in recorded_dates
-                    if cols[i].button(f"{day} 🔵" if has_d else f"{day}", key=f"btn_{t_str}", use_container_width=True):
+                    # 【修正】データがある日（has_d が True）のみボタンを有効化し、ない日は無効化
+                    if cols[i].button(f"{day} 🔵" if has_d else f"{day}", key=f"btn_{t_str}", use_container_width=True, disabled=not has_d):
                         st.session_state.sel_d = t_str
         
         if st.session_state.get('sel_d') and not user_records.empty:
@@ -254,14 +256,17 @@ def main():
             if not det.empty:
                 st.markdown(f"#### 📅 {st.session_state.sel_d}")
                 st.write(f"**獲得:** {pd.to_numeric(det.iloc[0]['points'], errors='coerce'):+g}")
-                st.write("**🟢 投資型:**", det.iloc[0].get('investment_items', ""))
-                st.write("**🔴 借金型:**", det.iloc[0].get('debt_items', ""))
+                st.write("**🟢 投資型:**", display_format(det.iloc[0].get('investment_items', "")))
+                st.write("**🔴 借金型:**", display_format(det.iloc[0].get('debt_items', "")))
 
         st.divider()
         with st.expander("📝 これまでの全履歴を表示する"):
             if not user_records.empty:
                 history_df = user_records.sort_values("date", ascending=False).copy()
                 history_df["points"] = pd.to_numeric(history_df["points"], errors="coerce").fillna(0).astype(int)
+                for col in ["investment_items", "debt_items"]:
+                    history_df[col] = history_df[col].apply(display_format)
+                
                 st.dataframe(history_df[["date", "points", "investment_items", "debt_items"]], 
                              use_container_width=True, hide_index=True,
                              column_config={

@@ -10,9 +10,10 @@ import calendar
 st.set_page_config(page_title="Dopamine Tracker", layout="wide")
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-# カスタムCSS
+# カスタムCSS：表のヘッダーとセル、カード類をすべてセンタリング
 st.markdown("""
     <style>
+    /* ステータスカード */
     .status-card {
         border: 1px solid #e6e9ef;
         border-radius: 15px;
@@ -27,8 +28,16 @@ st.markdown("""
     .status-count { font-size: 14px; color: #5e6064; }
     .cal-day-header { text-align: center; font-weight: bold; padding: 5px; border-bottom: 1px solid #eee; }
     
-    /* ランキング表のヘッダーを含めたセンタリングを補助するスタイル */
-    [data-testid="stDataFrame"] th {
+    /* ランキング表のヘッダー(タイトル欄)を強制的にセンタリング 
+       Glide Data Gridの内部クラスをターゲットにします
+    */
+    [data-testid="stDataFrame"] div[data-testid="column-header-content"] {
+        justify-content: center !important;
+        text-align: center !important;
+    }
+    
+    /* データフレーム全体のコンテナを中央に寄せる補助 */
+    [data-testid="stDataFrame"] div {
         text-align: center !important;
     }
     </style>
@@ -40,7 +49,8 @@ def make_hash(password):
 @st.cache_data(ttl=60)
 def load_data_cached():
     try:
-        return conn.read(worksheet="Records", ttl="1m")
+        df = conn.read(worksheet="Records", ttl="1m")
+        return df
     except:
         return pd.DataFrame(columns=["real_name", "password", "nickname", "team", "date", "points", "total_points", "entry_date", "investment_items", "debt_items"])
 
@@ -77,7 +87,7 @@ def main():
         
         if st.button("認証"):
             if not u_emp_id or not u_pass:
-                st.error("社員番号とパスワードを入力してください。")
+                st.error("認証情報を入力してください。")
             else:
                 st.query_params.update(eid=u_emp_id)
                 st.rerun()
@@ -88,7 +98,7 @@ def main():
 
     all_data = load_data_cached()
     
-    # 最新のニックネーム辞書作成
+    # ニックネームの特定（最新の登録を優先）
     latest_nicks = {}
     if not all_data.empty:
         rdf_sorted = all_data.sort_values("entry_date", ascending=True)
@@ -98,7 +108,6 @@ def main():
             if nick.strip() != "" and nick != eid and nick != "nan" and nick != "0":
                 latest_nicks[eid] = nick
 
-    # ユーザー表示名とポイント累計
     current_nickname = latest_nicks.get(str(saved_emp_id), str(saved_emp_id))
     user_records = all_data[all_data['real_name'].astype(str) == str(saved_emp_id)].copy()
     user_records['points'] = pd.to_numeric(user_records['points'], errors='coerce').fillna(0)
@@ -106,8 +115,9 @@ def main():
 
     tab1, tab2, tab3, tab4 = st.tabs(["📊 今日の記録", "🏆 ランキング", "📈 マイデータ", "⚙️ 設定"])
 
-    # --- タブ1: 記録 ---
+    # --- タブ1: 今日の記録 ---
     with tab1:
+        # ポイント前後に半角スペース
         st.write(f"### {current_nickname}さんのこれまでのポイントは {user_total_pts:g} です")
         
         target_date = st.date_input("対象日（７日前まで遡って登録、修正が出来ます）", 
@@ -130,9 +140,8 @@ def main():
             n_inv, n_debt = len(sel_inv), len(sel_debt)
             inv_stars = "★" * min(n_inv, 10) + "☆" * max(0, 10 - n_inv)
             debt_stars = "★" * min(n_debt, 10) + "☆" * max(0, 10 - n_debt)
-            inv_label, debt_label = f"{n_inv}個実施", f"{n_debt}個実施"
-            if n_inv > 10: inv_label = "10個以上実施"
-            if n_debt > 10: debt_label = "10個以上実施"
+            inv_label = f"{n_inv}個実施" if n_inv <= 10 else "10個以上実施"
+            debt_label = f"{n_debt}個実施" if n_debt <= 10 else "10個以上実施"
 
             with status_placeholder.container():
                 sc1, sc2 = st.columns(2)
@@ -145,7 +154,6 @@ def main():
 
             st.divider()
             day_count = n_inv - n_debt
-            # 表記変更：ポイント累計
             st.metric("本日のポイント累計", f"{day_count:+d} アクション")
 
             if st.button("この内容で登録する", type="primary"):
@@ -169,9 +177,8 @@ def main():
                     st.rerun()
         record_ui()
 
-    # --- タブ2: ランキング (全項目センタリング・競技方式順位) ---
+    # --- タブ2: ランキング (ヘッダーとデータのセンタリング徹底) ---
     with tab2:
-        # タイトルを中央揃え
         st.markdown("<h3 style='text-align: center;'>🏆 累計ポイントランキング</h3>", unsafe_allow_html=True)
         
         if not all_data.empty:
@@ -180,15 +187,14 @@ def main():
             rdf["表示名"] = rdf["real_name"].astype(str).map(lambda x: latest_nicks.get(x, x))
             
             summary = rdf.groupby("表示名")["points"].sum().reset_index()
-            # 表記変更：ポイント累計
             summary = summary.rename(columns={"points": "ポイント累計", "表示名": "ニックネーム"})
             
-            # 順位ロジック：競技方式 (method='min')
+            # 順位計算：method='min'（競技方式: 1-2-2-5）
             summary["順位"] = summary["ポイント累計"].rank(ascending=False, method='min').astype(int)
             summary = summary.sort_values("順位").reset_index(drop=True)
             summary = summary[["順位", "ニックネーム", "ポイント累計"]]
             
-            # ヘッダーとセルの両方を中央揃えに設定
+            # データフレームの表示設定
             st.dataframe(
                 summary, 
                 use_container_width=True, 
@@ -256,7 +262,7 @@ def main():
         
         if st.button("設定を保存"):
             if new_nick.strip():
-                with st.spinner("保存中..."):
+                with st.spinner("設定中..."):
                     current_all_data = conn.read(worksheet="Records", ttl="0s")
                     mask = current_all_data['real_name'].astype(str) == str(saved_emp_id)
                     if mask.any(): current_all_data.loc[mask, 'nickname'] = new_nick

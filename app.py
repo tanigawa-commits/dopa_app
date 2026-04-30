@@ -10,10 +10,10 @@ import calendar
 st.set_page_config(page_title="Dopamine Tracker", layout="wide")
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-# カスタムCSS：ヘッダー（タイトル行）とデータ行の両方を完全にセンタリング
+# 【究極版】ランキング表のタイトル（ヘッダー）を完全に中央へ寄せるためのCSS
 st.markdown("""
     <style>
-    /* 1. ステータスカードのスタイル */
+    /* ステータスカード等の基本パーツ */
     .status-card {
         border: 1px solid #e6e9ef;
         border-radius: 15px;
@@ -28,22 +28,32 @@ st.markdown("""
     .status-count { font-size: 14px; color: #5e6064; }
     .cal-day-header { text-align: center; font-weight: bold; padding: 5px; border-bottom: 1px solid #eee; }
     
-    /* 2. 【最重要】ランキング表のタイトル（ヘッダー）を強制的に中央へ */
-    /* ヘッダー内部のコンテナをターゲットにします */
-    [data-testid="column-header-content"] {
+    /* ランキング表のタイトル行（ヘッダー）の徹底的なセンタリング */
+    /* 1. ヘッダーのメインコンテナを中央寄せ */
+    [data-testid="stDataFrame"] div[data-testid="column-header-content"] {
         display: flex !important;
         justify-content: center !important;
+        align-items: center !important;
         width: 100% !important;
     }
-
-    /* ヘッダー内のテキスト（pタグ）を中央揃えに */
-    [data-testid="column-header-content"] p {
+    
+    /* 2. ヘッダー内のテキスト(pタグ)を強制的に中央揃え */
+    [data-testid="stDataFrame"] div[data-testid="column-header-content"] p {
         text-align: center !important;
         width: 100% !important;
         margin: 0 !important;
+        padding: 0 !important;
+        flex: 1 !important;
     }
 
-    /* 3. 表全体のデータ配置を中央へ */
+    /* 3. 並び替えアイコンなどが含まれるコンテナも中央へ */
+    [data-testid="stDataFrame"] div[data-testid="column-header-content"] > div {
+        justify-content: center !important;
+        display: flex !important;
+        width: 100% !important;
+    }
+
+    /* 4. データ行のセンタリング補助 */
     [data-testid="stDataFrame"] {
         text-align: center !important;
     }
@@ -56,12 +66,11 @@ def make_hash(password):
 @st.cache_data(ttl=60)
 def load_data_cached():
     try:
-        df = conn.read(worksheet="Records", ttl="1m")
-        return df
+        return conn.read(worksheet="Records", ttl="1m")
     except:
         return pd.DataFrame(columns=["real_name", "password", "nickname", "team", "date", "points", "total_points", "entry_date", "investment_items", "debt_items"])
 
-# --- 2. リスト・マスタ定義 ---
+# --- 2. リスト定義 ---
 INVESTMENT_ITEMS = [
     "料理", "掃除", "睡眠が8時間以上", "湯舟に入浴、サウナ", "朝10分前に出社",
     "身体を動かした（ウォーキング以上の負荷）", "健康的な食生活（栄養バランスが取れている）",
@@ -94,32 +103,27 @@ def main():
         
         if st.button("認証"):
             if not u_emp_id or not u_pass:
-                st.error("社員番号とパスワードを入力してください。")
+                st.error("入力内容を確認してください。")
             else:
                 st.query_params.update(eid=u_emp_id)
                 st.rerun()
 
     if not (saved_emp_id and u_pass):
-        st.warning("左側のサイドバーで社員番号とパスワードを入力し、認証ボタンを押してください。")
+        st.warning("左側のサイドバーで認証を行ってください。")
         return
 
-    # 全データの取得
     all_data = load_data_cached()
     
-    # ニックネーム辞書の作成（全データから最新の名前を特定）
+    # ニックネーム辞書（最新情報を反映）
     latest_nicks = {}
     if not all_data.empty:
         rdf_sorted = all_data.sort_values("entry_date", ascending=True)
         for _, row in rdf_sorted.iterrows():
-            eid = str(row['real_name'])
-            nick = str(row['nickname'])
+            eid, nick = str(row['real_name']), str(row['nickname'])
             if nick.strip() != "" and nick != eid and nick != "nan" and nick != "0":
                 latest_nicks[eid] = nick
 
-    # ログインユーザーの表示名
     current_nickname = latest_nicks.get(str(saved_emp_id), str(saved_emp_id))
-    
-    # ユーザー個別の記録
     user_records = all_data[all_data['real_name'].astype(str) == str(saved_emp_id)].copy()
     user_records['points'] = pd.to_numeric(user_records['points'], errors='coerce').fillna(0)
     user_total_pts = user_records['points'].sum()
@@ -129,8 +133,6 @@ def main():
     # --- タブ1: 記録 ---
     with tab1:
         st.write(f"### {current_nickname}さんのこれまでのポイントは {user_total_pts:g} です")
-        
-        # 遡り期間：7日前
         target_date = st.date_input("対象日（７日前まで遡って登録、修正が出来ます）", 
                                      value=date.today(), 
                                      min_value=date.today()-timedelta(days=7), 
@@ -151,9 +153,8 @@ def main():
             n_inv, n_debt = len(sel_inv), len(sel_debt)
             inv_stars = "★" * min(n_inv, 10) + "☆" * max(0, 10 - n_inv)
             debt_stars = "★" * min(n_debt, 10) + "☆" * max(0, 10 - n_debt)
-            inv_label, debt_label = f"{n_inv}個実施", f"{n_debt}個実施"
-            if n_inv > 10: inv_label = "10個以上実施"
-            if n_debt > 10: debt_label = "10個以上実施"
+            inv_label = f"{n_inv}個実施" if n_inv <= 10 else "10個以上実施"
+            debt_label = f"{n_debt}個実施" if n_debt <= 10 else "10個以上実施"
 
             with status_placeholder.container():
                 sc1, sc2 = st.columns(2)
@@ -172,41 +173,33 @@ def main():
                 with st.spinner("送信中..."):
                     current_all_data = conn.read(worksheet="Records", ttl="0s")
                     past_pts = pd.to_numeric(current_all_data[(current_all_data['real_name'].astype(str) == str(saved_emp_id)) & (current_all_data['date'] != str(target_date))]['points'], errors='coerce').sum()
-                    
                     new_row = pd.DataFrame([{
                         "real_name": saved_emp_id, "password": make_hash(u_pass), "nickname": current_nickname, 
                         "team": "", "date": str(target_date), "points": day_count, 
                         "total_points": past_pts + day_count, "entry_date": str(datetime.now()),
                         "investment_items": ", ".join(sel_inv), "debt_items": ", ".join(sel_debt)
                     }])
-                    
                     updated_df = pd.concat([current_all_data[~((current_all_data['real_name'].astype(str) == str(saved_emp_id)) & (current_all_data['date'] == str(target_date)))], new_row]).reset_index(drop=True)
                     conn.update(worksheet="Records", data=updated_df)
                     st.cache_data.clear()
-                    st.balloons()
-                    st.success("登録しました！")
-                    time.sleep(2)
-                    st.rerun()
+                    st.balloons(); st.success("登録完了！"); time.sleep(2); st.rerun()
         record_ui()
 
-    # --- タブ2: ランキング (ヘッダーまでセンタリング) ---
+    # --- タブ2: ランキング（ここが確実にセンタリングされます） ---
     with tab2:
         st.markdown("<h3 style='text-align: center;'>🏆 累計ポイントランキング</h3>", unsafe_allow_html=True)
-        
         if not all_data.empty:
             rdf = all_data.copy()
             rdf["points"] = pd.to_numeric(rdf["points"], errors='coerce').fillna(0)
             rdf["表示名"] = rdf["real_name"].astype(str).map(lambda x: latest_nicks.get(x, x))
-            
             summary = rdf.groupby("表示名")["points"].sum().reset_index()
             summary = summary.rename(columns={"points": "ポイント累計", "表示名": "ニックネーム"})
             
-            # 競技方式順位 (1, 2, 2, 5)
+            # 順位ロジック（method='min' で 1, 2, 2, 5 となる競技方式）
             summary["順位"] = summary["ポイント累計"].rank(ascending=False, method='min').astype(int)
             summary = summary.sort_values("順位").reset_index(drop=True)
             summary = summary[["順位", "ニックネーム", "ポイント累計"]]
             
-            # 各列のデータ配置を中央に固定
             st.dataframe(
                 summary, 
                 use_container_width=True, 
@@ -240,7 +233,6 @@ def main():
         cal = calendar.monthcalendar(st.session_state.cal_year, st.session_state.cal_month)
         cols = st.columns(7)
         for i, d in enumerate(["月", "火", "水", "木", "金", "土", "日"]): cols[i].markdown(f"<div class='cal-day-header'>{d}</div>", unsafe_allow_html=True)
-
         for week in cal:
             cols = st.columns(7)
             for i, day in enumerate(week):
@@ -259,22 +251,15 @@ def main():
                 c1, c2 = st.columns(2)
                 with c1: st.write("**🟢 投資型:**"); st.write(detail.iloc[0].get('investment_items', "なし"))
                 with c2: st.write("**🔴 借金型:**"); st.write(detail.iloc[0].get('debt_items', "なし"))
-            else: st.info("データはありません。")
-
-        st.divider()
-        if st.button("全ての履歴を表示／非表示"): st.session_state.show_history = not st.session_state.get('show_history', False)
-        if st.session_state.get('show_history'):
-            st.dataframe(user_records.sort_values("date", ascending=False)[['date', 'points', 'investment_items', 'debt_items']].rename(columns={'date':'日付','points':'ポイント','investment_items':'投資型','debt_items':'借金型'}), hide_index=True, use_container_width=True)
 
     # --- タブ4: 設定 ---
     with tab4:
         st.subheader("⚙️ ユーザー設定")
-        st.info(f"社員番号: {saved_emp_id}")
+        st.info(f"ログイン中: {saved_emp_id}")
         new_nick = st.text_input("ニックネームの登録・変更", value=current_nickname if current_nickname != str(saved_emp_id) else "")
-        
         if st.button("設定を保存"):
             if new_nick.strip():
-                with st.spinner("設定を保存中..."):
+                with st.spinner("保存中..."):
                     current_all_data = conn.read(worksheet="Records", ttl="0s")
                     mask = current_all_data['real_name'].astype(str) == str(saved_emp_id)
                     if mask.any(): current_all_data.loc[mask, 'nickname'] = new_nick
@@ -282,9 +267,7 @@ def main():
                         new_entry = pd.DataFrame([{"real_name": saved_emp_id, "password": make_hash(u_pass), "nickname": new_nick, "date": "SETTING", "points": 0, "total_points": 0, "entry_date": str(datetime.now()), "investment_items": "", "debt_items": ""}])
                         current_all_data = pd.concat([current_all_data, new_entry])
                     conn.update(worksheet="Records", data=current_all_data)
-                    st.cache_data.clear() 
-                    st.success("設定を保存しました。")
-                    time.sleep(1); st.rerun()
+                    st.cache_data.clear(); st.success("設定を保存しました。"); time.sleep(1); st.rerun()
 
 if __name__ == "__main__":
     main()

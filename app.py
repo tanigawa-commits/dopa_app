@@ -145,7 +145,6 @@ def main():
         pts_series = pd.to_numeric(user_records['points'], errors='coerce').fillna(0)
         st.write(f"### {current_nickname}さんの累計ポイント: {pts_series.sum():g}")
         
-        # 説明テキストを復活させた日付入力
         target_date = st.date_input(
             "対象日（７日前まで遡って登録、修正が出来ます）", 
             value=date.today(), 
@@ -206,7 +205,13 @@ def main():
                         updated = pd.concat([others, new_row]).reset_index(drop=True)
                     else: updated = new_row
                     conn.update(worksheet="Records", data=updated)
-                    st.cache_data.clear(); st.success("登録完了！"); time.sleep(1); st.rerun()
+                    
+                    # --- 風船演出の復活 ---
+                    st.cache_data.clear()
+                    st.balloons() 
+                    st.success("登録完了！")
+                    # ----------------------
+                    time.sleep(1); st.rerun()
         record_ui()
 
     # --- タブ2: ランキング ---

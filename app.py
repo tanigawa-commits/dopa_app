@@ -35,7 +35,8 @@ def make_hash(password):
 @st.cache_data(ttl=60)
 def load_data_cached():
     try:
-        return conn.read(worksheet="Records", ttl="1m")
+        df = conn.read(worksheet="Records", ttl="1m")
+        return df
     except:
         return pd.DataFrame(columns=["real_name", "password", "nickname", "team", "date", "points", "total_points", "entry_date", "investment_items", "debt_items"])
 
@@ -63,7 +64,6 @@ def main():
     st.title("Dopamine Tracker")
     st.subheader("今日の行動を記録して、脳の健康状態を可視化しましょう")
     
-    # URLパラメータから社員番号を取得
     saved_emp_id = st.query_params.get("eid", "")
     
     with st.sidebar:
@@ -83,22 +83,20 @@ def main():
         return
 
     all_data = load_data_cached()
-    # 社員番号（real_name列）でフィルタ
     user_records = all_data[all_data['real_name'] == saved_emp_id].copy()
     user_total_pts = user_records['points'].sum()
     
-    # ニックネームの取得（最新のレコードから取得、なければ社員番号を表示）
-    current_nickname = saved_emp_id
-    if not user_records.empty:
-        # 最新のニックネームが空でないものを探す
-        nick_list = user_records[user_records['nickname'].notna()]['nickname'].tolist()
-        if nick_list:
-            current_nickname = nick_list[-1]
+    # ニックネームの取得ロジックを強化
+    # 1. 保存されたデータから社員番号に紐づくニックネームのリストを作成（空文字やNoneを除外）
+    valid_nicks = [n for n in user_records['nickname'].unique() if pd.notna(n) and str(n).strip() != "" and str(n) != saved_emp_id]
+    # 2. 最新の登録内容を優先する
+    current_nickname = valid_nicks[-1] if valid_nicks else saved_emp_id
 
     tab1, tab2, tab3, tab4 = st.tabs(["📊 今日の記録", "🏆 ランキング", "📈 マイデータ", "⚙️ 設定"])
 
     # --- タブ1: 記録 ---
     with tab1:
+        # ニックネームを優先的に表示。ポイントの前後に半角スペース。
         st.write(f"### {current_nickname}さんのこれまでのポイントは {user_total_pts:g} です")
         target_date = st.date_input("対象日（２日前まで修正可）", value=date.today(), min_value=date.today()-timedelta(days=2), max_value=date.today())
 
@@ -133,7 +131,6 @@ def main():
             day_count = n_inv - n_debt
             st.metric("本日の収支累計", f"{day_count:+d} アクション")
 
-            # ボタン名を「この内容で登録する」に変更
             if st.button("この内容で登録する", type="primary"):
                 with st.spinner("送信中..."):
                     current_all_data = conn.read(worksheet="Records", ttl="0s")
@@ -155,14 +152,18 @@ def main():
                     st.rerun()
         record_ui()
 
-    # --- タブ2: ランキング ---
+    # --- タブ2: ランキング（社員番号は表示しない） ---
     with tab2:
         st.subheader("🏆 累計アクション収支ランキング")
         if not all_data.empty:
-            rdf = all_data.groupby(['nickname', 'real_name'])['points'].sum().reset_index()
-            # 表示用にカラム名を調整
-            rdf = rdf.rename(columns={'nickname': 'ニックネーム', 'real_name': '社員番号', 'points': '累計収支'})
-            st.dataframe(rdf.sort_values("累計収支", ascending=False), use_container_width=True, hide_index=True)
+            # 最新のニックネームを採用してグループ化
+            latest_nicks = all_data.sort_values("entry_date").groupby("real_name")["nickname"].last().to_dict()
+            rdf = all_data.copy()
+            rdf["ニックネーム"] = rdf["real_name"].map(latest_nicks)
+            
+            summary = rdf.groupby("ニックネーム")["points"].sum().reset_index()
+            summary = summary.rename(columns={"points": "累計収支"})
+            st.dataframe(summary.sort_values("累計収支", ascending=False), use_container_width=True, hide_index=True)
 
     # --- タブ3: マイデータ ---
     with tab3:
@@ -212,26 +213,31 @@ def main():
         if st.session_state.get('show_history'):
             st.dataframe(user_records.sort_values("date", ascending=False)[['date', 'points', 'investment_items', 'debt_items']].rename(columns={'date':'日付','points':'収支','investment_items':'投資型','debt_items':'借金型'}), hide_index=True, use_container_width=True)
 
-    # --- タブ4: ユーザー設定（社員番号とニックネームの紐づけ） ---
+    # --- タブ4: 設定 ---
     with tab4:
         st.subheader("⚙️ ユーザー設定")
-        st.info(f"現在の社員番号: {saved_emp_id}")
+        st.info(f"社員番号: {saved_emp_id}")
         new_nick = st.text_input("ニックネームの登録・変更", value=current_nickname if current_nickname != saved_emp_id else "")
         
         if st.button("設定を保存"):
             if new_nick:
                 with st.spinner("更新中..."):
                     current_all_data = conn.read(worksheet="Records", ttl="0s")
-                    # ユーザーの全レコードのニックネームを一括更新（または新規登録用ダミーを作成）
+                    
+                    # 全ての過去データのニックネームを一括置換する（社員番号に紐づく名前を統一）
                     if saved_emp_id in current_all_data['real_name'].values:
                         current_all_data.loc[current_all_data['real_name'] == saved_emp_id, 'nickname'] = new_nick
                     else:
-                        # まだ一度も記録がない場合、ニックネーム登録用の空レコードを作成
-                        dummy_row = pd.DataFrame([{"real_name": saved_emp_id, "password": make_hash(u_pass), "nickname": new_nick, "date": "SETTING", "points": 0, "total_points": 0, "entry_date": str(date.today())}])
+                        # 初めての登録
+                        dummy_row = pd.DataFrame([{
+                            "real_name": saved_emp_id, "password": make_hash(u_pass), "nickname": new_nick, 
+                            "date": "SETTING", "points": 0, "total_points": 0, "entry_date": str(date.today()),
+                            "investment_items": "", "debt_items": ""
+                        }])
                         current_all_data = pd.concat([current_all_data, dummy_row])
                     
                     conn.update(worksheet="Records", data=current_all_data)
-                    st.cache_data.clear()
+                    st.cache_data.clear() # キャッシュを消して即時反映させる
                     st.success("ニックネームを設定しました！")
                     time.sleep(1)
                     st.rerun()

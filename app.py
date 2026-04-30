@@ -10,10 +10,10 @@ import calendar
 st.set_page_config(page_title="Dopamine Tracker", layout="wide")
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-# 【究極版】ランキング表のタイトル（ヘッダー）を完全に中央へ寄せるためのCSS
+# カスタムCSS：特殊なセンタリングを廃止し、基本スタイルのみにリセット
 st.markdown("""
     <style>
-    /* ステータスカード等の基本パーツ */
+    /* ステータスカードの基本デザインのみ維持 */
     .status-card {
         border: 1px solid #e6e9ef;
         border-radius: 15px;
@@ -27,36 +27,6 @@ st.markdown("""
     .status-label { font-size: 16px; font-weight: bold; }
     .status-count { font-size: 14px; color: #5e6064; }
     .cal-day-header { text-align: center; font-weight: bold; padding: 5px; border-bottom: 1px solid #eee; }
-    
-    /* ランキング表のタイトル行（ヘッダー）の徹底的なセンタリング */
-    /* 1. ヘッダーのメインコンテナを中央寄せ */
-    [data-testid="stDataFrame"] div[data-testid="column-header-content"] {
-        display: flex !important;
-        justify-content: center !important;
-        align-items: center !important;
-        width: 100% !important;
-    }
-    
-    /* 2. ヘッダー内のテキスト(pタグ)を強制的に中央揃え */
-    [data-testid="stDataFrame"] div[data-testid="column-header-content"] p {
-        text-align: center !important;
-        width: 100% !important;
-        margin: 0 !important;
-        padding: 0 !important;
-        flex: 1 !important;
-    }
-
-    /* 3. 並び替えアイコンなどが含まれるコンテナも中央へ */
-    [data-testid="stDataFrame"] div[data-testid="column-header-content"] > div {
-        justify-content: center !important;
-        display: flex !important;
-        width: 100% !important;
-    }
-
-    /* 4. データ行のセンタリング補助 */
-    [data-testid="stDataFrame"] {
-        text-align: center !important;
-    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -103,18 +73,18 @@ def main():
         
         if st.button("認証"):
             if not u_emp_id or not u_pass:
-                st.error("入力内容を確認してください。")
+                st.error("社員番号とパスワードを入力してください。")
             else:
                 st.query_params.update(eid=u_emp_id)
                 st.rerun()
 
     if not (saved_emp_id and u_pass):
-        st.warning("左側のサイドバーで認証を行ってください。")
+        st.warning("左側のサイドバーで社員番号とパスワードを入力し、認証ボタンを押してください。")
         return
 
     all_data = load_data_cached()
     
-    # ニックネーム辞書（最新情報を反映）
+    # ニックネームの特定（最新の有効な登録を優先）
     latest_nicks = {}
     if not all_data.empty:
         rdf_sorted = all_data.sort_values("entry_date", ascending=True)
@@ -133,6 +103,7 @@ def main():
     # --- タブ1: 記録 ---
     with tab1:
         st.write(f"### {current_nickname}さんのこれまでのポイントは {user_total_pts:g} です")
+        
         target_date = st.date_input("対象日（７日前まで遡って登録、修正が出来ます）", 
                                      value=date.today(), 
                                      min_value=date.today()-timedelta(days=7), 
@@ -153,8 +124,9 @@ def main():
             n_inv, n_debt = len(sel_inv), len(sel_debt)
             inv_stars = "★" * min(n_inv, 10) + "☆" * max(0, 10 - n_inv)
             debt_stars = "★" * min(n_debt, 10) + "☆" * max(0, 10 - n_debt)
-            inv_label = f"{n_inv}個実施" if n_inv <= 10 else "10個以上実施"
-            debt_label = f"{n_debt}個実施" if n_debt <= 10 else "10個以上実施"
+            inv_label, debt_label = f"{n_inv}個実施", f"{n_debt}個実施"
+            if n_inv > 10: inv_label = "10個以上実施"
+            if n_debt > 10: debt_label = "10個以上実施"
 
             with status_placeholder.container():
                 sc1, sc2 = st.columns(2)
@@ -181,13 +153,12 @@ def main():
                     }])
                     updated_df = pd.concat([current_all_data[~((current_all_data['real_name'].astype(str) == str(saved_emp_id)) & (current_all_data['date'] == str(target_date)))], new_row]).reset_index(drop=True)
                     conn.update(worksheet="Records", data=updated_df)
-                    st.cache_data.clear()
-                    st.balloons(); st.success("登録完了！"); time.sleep(2); st.rerun()
+                    st.cache_data.clear(); st.balloons(); st.success("登録しました！"); time.sleep(2); st.rerun()
         record_ui()
 
-    # --- タブ2: ランキング（ここが確実にセンタリングされます） ---
+    # --- タブ2: ランキング (すべて左寄せ) ---
     with tab2:
-        st.markdown("<h3 style='text-align: center;'>🏆 累計ポイントランキング</h3>", unsafe_allow_html=True)
+        st.subheader("🏆 累計ポイントランキング")
         if not all_data.empty:
             rdf = all_data.copy()
             rdf["points"] = pd.to_numeric(rdf["points"], errors='coerce').fillna(0)
@@ -195,19 +166,20 @@ def main():
             summary = rdf.groupby("表示名")["points"].sum().reset_index()
             summary = summary.rename(columns={"points": "ポイント累計", "表示名": "ニックネーム"})
             
-            # 順位ロジック（method='min' で 1, 2, 2, 5 となる競技方式）
+            # 競技方式順位 (1, 2, 2, 5)
             summary["順位"] = summary["ポイント累計"].rank(ascending=False, method='min').astype(int)
             summary = summary.sort_values("順位").reset_index(drop=True)
             summary = summary[["順位", "ニックネーム", "ポイント累計"]]
             
+            # ご要望：すべて左寄せ (alignment="left")
             st.dataframe(
                 summary, 
                 use_container_width=True, 
                 hide_index=True,
                 column_config={
-                    "順位": st.column_config.NumberColumn("順位", alignment="center"),
-                    "ニックネーム": st.column_config.TextColumn("ニックネーム", alignment="center"),
-                    "ポイント累計": st.column_config.NumberColumn("ポイント累計", alignment="center"),
+                    "順位": st.column_config.NumberColumn("順位", alignment="left"),
+                    "ニックネーム": st.column_config.TextColumn("ニックネーム", alignment="left"),
+                    "ポイント累計": st.column_config.NumberColumn("ポイント累計", alignment="left"),
                 }
             )
 
@@ -255,7 +227,7 @@ def main():
     # --- タブ4: 設定 ---
     with tab4:
         st.subheader("⚙️ ユーザー設定")
-        st.info(f"ログイン中: {saved_emp_id}")
+        st.info(f"社員番号: {saved_emp_id}")
         new_nick = st.text_input("ニックネームの登録・変更", value=current_nickname if current_nickname != str(saved_emp_id) else "")
         if st.button("設定を保存"):
             if new_nick.strip():

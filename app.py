@@ -9,7 +9,7 @@ import calendar
 st.set_page_config(page_title="Dopamine Tracker", layout="wide")
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-# 基本的なデザイン用CSS
+# 基本デザインCSS（特殊な配置設定はすべて解除）
 st.markdown("""
     <style>
     .status-card {
@@ -56,67 +56,66 @@ DEBT_ITEMS = [
     "無駄な出費", "独り言が多かった", "倫理観に欠ける行動（電車で席を譲らない、夜にゴミを出す等）"
 ]
 
-# --- 3. メイン認証処理 ---
+# --- 3. メイン認証・アプリ処理 ---
 def main():
     st.title("Dopamine Tracker")
     st.subheader("今日の行動を記録して、脳の健康状態を可視化しましょう")
 
-    # メールアドレスの取得（最新のAPIを使用）
+    # --- 認証セクション ---
+    # Streamlit CloudのPrivate設定時に有効。
     try:
         login_email = st.context.user.email
     except AttributeError:
-        # 非公開設定でない場合や古い環境でのフォールバック
+        # 非公開設定でない場合やローカル環境でのフォールバック
         login_email = getattr(st.user, 'email', None)
 
     if not login_email:
         st.error("Googleアカウント情報が取得できません。")
-        st.info("💡 **設定確認:** Streamlit Cloudの管理画面(Settings)でアプリの公開設定を **'Private'** に変更し、自分を招待してください。")
-        # テスト用（開発時はコメントアウトを外す）
-        # login_email = "your-test@example.com" 
+        st.info("💡 **設定確認:** Streamlit Cloudの管理画面でアプリを **'Private'** に変更し、自分を招待してください。")
+        # デバッグ用（テスト時のみコメントアウトを外す）
+        # login_email = "test-user@example.com" 
         return
 
-    # データの読み込み
     user_master = load_data_cached("UserMaster")
     all_records = load_data_cached("Records")
 
-    # ログイン中のメールアドレスが登録済みか確認
+    # ログイン済みか照合
     registered_row = user_master[user_master['email'] == login_email]
 
     if registered_row.empty:
-        # 【初回登録画面】Gmailと社員番号を紐づける
+        # 初回登録：社員番号と紐付け
         st.info(f"ようこそ {login_email} さん。初回のみ社員番号の登録が必要です。")
         new_emp_id = st.text_input("あなたの社員番号(4桁)を入力してください", max_chars=4)
         
-        if st.button("利用開始する"):
+        if st.button("利用開始"):
             if not new_emp_id or len(new_emp_id) != 4:
                 st.error("社員番号は4桁で入力してください。")
             elif new_emp_id in user_master['emp_id'].astype(str).values:
-                st.error("その社員番号は既に他のアカウントで使用されています。")
+                st.error("その社員番号は既に別のアカウントに登録されています。")
             else:
-                # UserMasterへ新規登録
                 new_user_df = pd.DataFrame([{"email": login_email, "emp_id": new_emp_id}])
                 updated_master = pd.concat([user_master, new_user_df]).reset_index(drop=True)
                 conn.update(worksheet="UserMaster", data=updated_master)
-                st.success("紐づけが完了しました！")
+                st.success("認証が完了しました！")
                 st.cache_data.clear()
                 time.sleep(1)
                 st.rerun()
         return 
     
-    # 【認証済】社員番号を特定
+    # 認証済み社員番号
     current_emp_id = str(registered_row.iloc[0]['emp_id'])
 
-    # 個人の記録を抽出
+    # 個別データの抽出
     user_records = all_records[all_records['real_name'].astype(str) == current_emp_id].copy()
     user_records['points'] = pd.to_numeric(user_records['points'], errors='coerce').fillna(0)
     user_total_pts = user_records['points'].sum()
 
-    # ニックネームの特定（Recordsシートから最新のものを取得、なければ社員番号）
+    # ニックネームの特定（Recordsの最新行を参照）
     current_nickname = current_emp_id
     if not user_records.empty:
-        valid_nick_df = user_records[user_records['nickname'].notna() & (user_records['nickname'] != "")].sort_values("entry_date")
-        if not valid_nick_df.empty:
-            current_nickname = valid_nick_df.iloc[-1]['nickname']
+        valid_nicks = user_records[user_records['nickname'].notna() & (user_records['nickname'] != "")].sort_values("entry_date")
+        if not valid_nicks.empty:
+            current_nickname = valid_nicks.iloc[-1]['nickname']
 
     tab1, tab2, tab3, tab4 = st.tabs(["📊 今日の記録", "🏆 ランキング", "📈 マイデータ", "⚙️ 設定"])
 
@@ -163,10 +162,8 @@ def main():
 
             if st.button("この内容で登録する", type="primary"):
                 with st.spinner("登録中..."):
-                    # 最新データを再取得
-                    current_db = conn.read(worksheet="Records", ttl="0s")
-                    # 同じ日の既存データを除外したポイント合計
-                    past_pts = pd.to_numeric(current_db[(current_db['real_name'].astype(str) == current_emp_id) & (current_db['date'] != str(target_date))]['points'], errors='coerce').sum()
+                    db = conn.read(worksheet="Records", ttl="0s")
+                    past_pts = pd.to_numeric(db[(db['real_name'].astype(str) == current_emp_id) & (db['date'] != str(target_date))]['points'], errors='coerce').sum()
                     
                     new_row = pd.DataFrame([{
                         "real_name": current_emp_id, "nickname": current_nickname, 
@@ -175,33 +172,32 @@ def main():
                         "investment_items": ", ".join(sel_inv), "debt_items": ", ".join(sel_debt)
                     }])
                     
-                    # 既存の同じ日のデータを消して上書き
-                    others = current_db[~((current_db['real_name'].astype(str) == current_emp_id) & (current_db['date'] == str(target_date)))]
+                    others = db[~((db['real_name'].astype(str) == current_emp_id) & (db['date'] == str(target_date)))]
                     updated_df = pd.concat([others, new_row]).reset_index(drop=True)
                     conn.update(worksheet="Records", data=updated_df)
-                    st.cache_data.clear(); st.balloons(); st.success("登録しました！"); time.sleep(1); st.rerun()
+                    st.cache_data.clear(); st.balloons(); st.success("登録完了！"); time.sleep(1); st.rerun()
         record_ui()
 
-    # --- タブ2: ランキング (標準の左寄せ) ---
+    # --- タブ2: ランキング (全項目左寄せ) ---
     with tab2:
         st.subheader("🏆 累計ポイントランキング")
         if not all_records.empty:
             rdf = all_records.copy()
             rdf["points"] = pd.to_numeric(rdf["points"], errors='coerce').fillna(0)
             
-            # 各社員の最新ニックネーム対応表を作成
-            latest_nick_map = rdf[rdf['nickname'].notna() & (rdf['nickname'] != "")].sort_values("entry_date").groupby("real_name")["nickname"].last().to_dict()
-            rdf["表示名"] = rdf["real_name"].astype(str).map(lambda x: latest_nick_map.get(x, x))
+            # 各社員の最新ニックネームを適用
+            map_nicks = rdf[rdf['nickname'].notna() & (rdf['nickname'] != "")].sort_values("entry_date").groupby("real_name")["nickname"].last().to_dict()
+            rdf["表示名"] = rdf["real_name"].astype(str).map(lambda x: map_nicks.get(x, x))
             
             summary = rdf.groupby("表示名")["points"].sum().reset_index()
             summary = summary.rename(columns={"points": "ポイント累計", "表示名": "ニックネーム"})
             
-            # 競技順位方式 (1, 2, 2, 5)
+            # 競技順位方式 (1-2-2-5位)
             summary["順位"] = summary["ポイント累計"].rank(ascending=False, method='min').astype(int)
             summary = summary.sort_values("順位").reset_index(drop=True)
             summary = summary[["順位", "ニックネーム", "ポイント累計"]]
             
-            # すべて左寄せで表示
+            # すべて左寄せ (alignment="left")
             st.dataframe(
                 summary, use_container_width=True, hide_index=True,
                 column_config={
@@ -217,14 +213,14 @@ def main():
         if 'cal_year' not in st.session_state:
             st.session_state.cal_year, st.session_state.cal_month = date.today().year, date.today().month
         
-        c_nav1, c_nav2, c_nav3 = st.columns([1, 2, 1])
-        with c_nav1:
+        c1, c2, c3 = st.columns([1, 2, 1])
+        with c1:
             if st.button("⬅️ 前の月"):
                 st.session_state.cal_month -= 1
                 if st.session_state.cal_month == 0: st.session_state.cal_month, st.session_state.cal_year = 12, st.session_state.cal_year - 1
                 st.rerun()
-        with c_nav2: st.markdown(f"<h3 style='text-align: center;'>{st.session_state.cal_year}年 {st.session_state.cal_month}月</h3>", unsafe_allow_html=True)
-        with c_nav3:
+        with c2: st.markdown(f"<h3 style='text-align: center;'>{st.session_state.cal_year}年 {st.session_state.cal_month}月</h3>", unsafe_allow_html=True)
+        with c3:
             if st.button("次の月 ➡️"):
                 st.session_state.cal_month += 1
                 if st.session_state.cal_month == 13: st.session_state.cal_month, st.session_state.cal_year = 1, st.session_state.cal_year + 1
@@ -237,10 +233,10 @@ def main():
             cols = st.columns(7)
             for i, day in enumerate(week):
                 if day != 0:
-                    target_str = f"{st.session_state.cal_year}-{st.session_state.cal_month:02d}-{day:02d}"
-                    has_data = not user_records[user_records['date'] == target_str].empty
-                    if cols[i].button(f"{day} 🔴" if has_data else f"{day}", key=f"btn_{target_str}", use_container_width=True):
-                        st.session_state.selected_cal_date = target_str
+                    target_date_str = f"{st.session_state.cal_year}-{st.session_state.cal_month:02d}-{day:02d}"
+                    has_data = not user_records[user_records['date'] == target_date_str].empty
+                    if cols[i].button(f"{day} 🔴" if has_data else f"{day}", key=f"btn_{target_date_str}", use_container_width=True):
+                        st.session_state.selected_cal_date = target_date_str
 
         if st.session_state.get('selected_cal_date'):
             st.divider()
@@ -251,27 +247,24 @@ def main():
                 sc1, sc2 = st.columns(2)
                 with sc1: st.write("**🟢 投資型:**"); st.write(detail.iloc[0].get('investment_items', "なし"))
                 with sc2: st.write("**🔴 借金型:**"); st.write(detail.iloc[0].get('debt_items', "なし"))
-            else: st.info("この日の記録はありません。")
 
     # --- タブ4: 設定 ---
     with tab4:
         st.subheader("⚙️ ユーザー設定")
-        st.info(f"ログインアカウント: {login_email}\n認証済み社員番号: {current_emp_id}")
+        st.info(f"ログイン中: {login_email}\n社員番号: {current_emp_id}")
         
-        new_nick = st.text_input("ニックネームを変更する", value=current_nickname if current_nickname != current_emp_id else "")
+        new_nick = st.text_input("ニックネームの変更", value=current_nickname if current_nickname != current_emp_id else "")
         if st.button("ニックネームを保存"):
             if new_nick.strip():
                 with st.spinner("更新中..."):
-                    current_db = conn.read(worksheet="Records", ttl="0s")
-                    mask = current_db['real_name'].astype(str) == current_emp_id
+                    db = conn.read(worksheet="Records", ttl="0s")
+                    mask = db['real_name'].astype(str) == current_emp_id
                     if mask.any():
-                        current_db.loc[mask, 'nickname'] = new_nick
+                        db.loc[mask, 'nickname'] = new_nick
                     else:
-                        # まだ記録がない場合の登録用
                         new_row = pd.DataFrame([{"real_name": current_emp_id, "nickname": new_nick, "date": "SETTING", "points": 0, "entry_date": str(datetime.now())}])
-                        current_db = pd.concat([current_db, new_row])
-                    
-                    conn.update(worksheet="Records", data=current_db)
+                        db = pd.concat([db, new_row])
+                    conn.update(worksheet="Records", data=db)
                     st.cache_data.clear(); st.success("保存しました。"); time.sleep(1); st.rerun()
 
 if __name__ == "__main__":

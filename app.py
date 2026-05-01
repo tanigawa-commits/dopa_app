@@ -28,24 +28,20 @@ st.markdown("""
 
 def make_hash(password): return hashlib.sha256(str.encode(password)).hexdigest()
 
-def clean_val(x):
-    """ 空の値やNoneを全角ハイフンに変換する """
+def clean_val_for_display(x):
+    """ 表の表示用：空の値やNoneを全角ハイフンにする """
     if pd.isna(x): return "－"
     s = str(x).strip()
     if s.lower() in ["nan", "none", "", "null"]: return "－"
-    if s.endswith('.0'): s = s[:-2]
     return s
 
 def normalize_id(x):
+    """ IDを4桁に整形する """
     s = str(x).strip()
     if s.endswith('.0'): s = s[:-2]
     if not s or s.lower() in ["nan", "none"]: return ""
     try: return str(int(float(s))).zfill(4)
     except: return s.zfill(4)
-
-def display_format(val):
-    s = clean_val(val)
-    return s if s != "－" else "－"
 
 @st.cache_data(ttl=60)
 def load_data_cached(sheet_name):
@@ -61,6 +57,7 @@ def load_data_cached(sheet_name):
     except Exception:
         return pd.DataFrame()
 
+# 項目定義
 INVESTMENT_ITEMS = ["料理", "掃除", "睡眠が8時間以上", "湯舟に入浴、サウナ", "朝10分前に出社", "身体を動かした", "健康的な食生活", "洗濯", "ニュースをみる", "学習", "読書", "創作", "音楽", "挨拶", "感謝", "家族との時間", "植物", "ペット", "新しい挑戦"]
 DEBT_ITEMS = ["外食オンリー", "掃除なし", "睡眠不足", "シャワーのみ", "朝ギリギリ", "1日ゴロゴロ", "ギルティ食", "アルコール", "タバコ", "スマホ2h以上", "映像2h以上", "SNS2h以上", "ゲーム2h以上", "ソシャゲ起動", "ゲーム課金", "ギャンブル", "無駄な出費", "独り言", "倫理欠如"]
 
@@ -89,9 +86,10 @@ def main():
                         id_msg.error("この社員番号は使用できません")
                     else:
                         id_msg.empty()
-                        stored_hash = clean_val(user_row.iloc[0].get('password_hash', ""))
+                        raw_hash = user_row.iloc[0].get('password_hash', "")
+                        stored_hash = str(raw_hash).strip() if pd.notna(raw_hash) and str(raw_hash).lower() not in ["nan", "none", ""] else None
                         
-                        if stored_hash == "－":
+                        if not stored_hash:
                             with st.form("init_reg"):
                                 st.info("初回登録：パスワードを設定してください（４文字以上）")
                                 reg_msg = st.empty()
@@ -100,20 +98,16 @@ def main():
                                 npc = st.text_input("確認用パスワード", type="password")
                                 
                                 if st.form_submit_button("登録してログイン"):
-                                    if ac != SECRET_AUTH_CODE:
-                                        reg_msg.error("秘密の合言葉が違います")
-                                    elif len(np) < 4:
-                                        reg_msg.error("パスワードは４文字以上を設定してください")
-                                    elif np != npc:
-                                        reg_msg.error("入力された２つのパスワードが一致していません")
+                                    if ac != SECRET_AUTH_CODE: reg_msg.error("秘密の合言葉が違います")
+                                    elif len(np) < 4: reg_msg.error("パスワードは４文字以上")
+                                    elif np != npc: reg_msg.error("不一致")
                                     else:
-                                        reg_msg.empty()
                                         cm = conn.read(worksheet="UserMaster", ttl="0s").astype(str)
                                         cm['tmp'] = cm['emp_id'].apply(normalize_id)
                                         idx = cm[cm['tmp'] == target_id_norm].index[0]
                                         cm.at[idx, 'password_hash'], cm.at[idx, 'nickname'] = str(make_hash(np)), target_id_norm
                                         conn.update(worksheet="UserMaster", data=cm.drop(columns=['tmp']))
-                                        st.session_state.update({"authenticated":True, "current_user":target_id_norm, "last_logged_id":target_id_norm})
+                                        st.session_state.update({"authenticated":True, "current_user":target_id_norm})
                                         st.cache_data.clear(); st.rerun()
                         else:
                             with st.form("login_f"):
@@ -121,20 +115,20 @@ def main():
                                 ip = st.text_input("パスワード", type="password")
                                 if st.form_submit_button("ログイン"):
                                     if make_hash(ip) == stored_hash:
-                                        login_msg.empty()
-                                        st.session_state.update({"authenticated":True, "current_user":target_id_norm, "last_logged_id":target_id_norm})
+                                        st.session_state.update({"authenticated":True, "current_user":target_id_norm})
                                         st.cache_data.clear(); st.rerun()
-                                    else:
-                                        login_msg.error("パスワードが違います")
+                                    else: login_msg.error("パスワードが違います")
         st.stop()
 
+    # データ読み込み
     current_emp_id = st.session_state.current_user
-    with st.spinner("データ同期中..."):
-        master_data = load_data_cached("UserMaster")
-        user_info = master_data[master_data['emp_id_norm'] == current_emp_id].iloc[0]
-        current_nickname = clean_val(user_info['nickname']) if clean_val(user_info['nickname']) != "－" else current_emp_id
-        all_recs = load_data_cached("Records")
-        user_recs = all_recs[all_recs['real_name_norm'] == current_emp_id] if not all_recs.empty else pd.DataFrame()
+    master_data = load_data_cached("UserMaster")
+    user_info = master_data[master_data['emp_id_norm'] == current_emp_id].iloc[0]
+    nickname_raw = user_info.get('nickname', current_emp_id)
+    current_nickname = str(nickname_raw) if pd.notna(nickname_raw) and str(nickname_raw).lower() not in ["nan", "none", ""] else current_emp_id
+    
+    all_recs = load_data_cached("Records")
+    user_recs = all_recs[all_recs['real_name_norm'] == current_emp_id] if not all_recs.empty else pd.DataFrame()
 
     st.title("📊 Dopamine Tracker")
     with st.sidebar:
@@ -147,8 +141,9 @@ def main():
 
     # --- タブ1: 今日の記録 ---
     with tab1:
-        total_pts = pd.to_numeric(user_recs['points'], errors='coerce').fillna(0).sum()
-        st.write(f"### {current_nickname}さんの累計ポイントは {total_pts:g} ptです")
+        valid_pts = pd.to_numeric(user_recs['points'], errors='coerce').fillna(0)
+        total_pts = int(valid_pts.sum())
+        st.write(f"### {current_nickname}さんの累計ポイントは {total_pts} ptです")
         target_date = st.date_input("対象日（７日前まで遡って登録、修正が出来ます）", value=date.today(), min_value=date.today()-timedelta(days=7), max_value=date.today())
 
         @st.fragment
@@ -188,7 +183,41 @@ def main():
                     st.cache_data.clear(); st.rerun()
         record_ui()
 
-    # --- タブ2: ランキング ---
+    # --- タブ3: マイデータ（表形式 完成版） ---
+    with tab3:
+        st.subheader("📋 全履歴の一覧")
+        if not user_recs.empty:
+            # 表示用データの抽出と並べ替え
+            df_view = user_recs[['date', 'points', 'investment_items', 'debt_items']].copy()
+            df_view['date'] = pd.to_datetime(df_view['date']).dt.date
+            df_view = df_view.sort_values('date', ascending=False)
+            
+            # None/nanを全角ハイフン「－」に置換
+            df_view['investment_items'] = df_view['investment_items'].apply(clean_val_for_display)
+            df_view['debt_items'] = df_view['debt_items'].apply(clean_val_for_display)
+            
+            # 数値型に変換してpt表記を適用
+            df_view['points'] = pd.to_numeric(df_view['points'], errors='coerce').fillna(0)
+            
+            # 表示名の変更：投資したこと→投資、自分への借金→借金
+            df_view.columns = ['日付', 'ポイント', '投資', '借金']
+            
+            st.dataframe(
+                df_view,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "日付": st.column_config.DateColumn(format="YYYY/MM/DD", width="small"),
+                    "ポイント": st.column_config.NumberColumn(format="%d pt", width="small"),
+                    "投資": st.column_config.TextColumn(width="large"), # 幅を広げて折り返し
+                    "借金": st.column_config.TextColumn(width="large")  # 投資と同じ幅に設定
+                }
+            )
+            st.caption("※ 項目が多い場合はセル内で自動的に折り返されます。")
+        else:
+            st.warning("記録がまだありません。")
+
+    # --- ランキング・設定（他機能は維持） ---
     with tab2:
         st.subheader("🏆 累計ポイントランキング")
         if not all_recs.empty:
@@ -197,42 +226,10 @@ def main():
             summary = rdf.groupby("real_name_norm")["points"].sum().reset_index()
             master_mini = master_data[['emp_id_norm', 'nickname']].drop_duplicates()
             summary = summary.merge(master_mini, left_on='real_name_norm', right_on='emp_id_norm', how='left')
-            summary['表示名'] = summary['nickname'].apply(display_format)
+            summary['ニックネーム'] = summary['nickname'].apply(lambda x: x if pd.notna(x) and str(x).lower() not in ["nan", "none", ""] else "－")
             summary["順位"] = summary["points"].rank(ascending=False, method='min').astype(int)
-            st.dataframe(summary.sort_values("順位")[["順位", "表示名", "points"]].rename(columns={"points":"累計"}), use_container_width=True, hide_index=True, column_config={"順位":st.column_config.NumberColumn(alignment="left"), "累計":st.column_config.NumberColumn(format="%d", alignment="left")})
+            st.dataframe(summary.sort_values("順位")[["順位", "ニックネーム", "points"]].rename(columns={"points":"累計"}), use_container_width=True, hide_index=True, column_config={"順位":st.column_config.NumberColumn(alignment="left"), "累計":st.column_config.NumberColumn(format="%d", alignment="left")})
 
-    # --- タブ3: マイデータ（表形式アップデート） ---
-    with tab3:
-        st.subheader("📋 全履歴の一覧")
-        if not user_recs.empty:
-            # データの整形
-            display_recs = user_recs[['date', 'points', 'investment_items', 'debt_items']].copy()
-            display_recs = display_recs.sort_values('date', ascending=False)
-            
-            # None/空文字の置換
-            display_recs['investment_items'] = display_recs['investment_items'].apply(clean_val)
-            display_recs['debt_items'] = display_recs['debt_items'].apply(clean_val)
-            
-            # 列名の変更
-            display_recs.columns = ['日付', 'ポイント', '投資', '借金']
-            
-            # テーブルの表示設定
-            st.dataframe(
-                display_recs,
-                use_container_width=True,
-                hide_index=True,
-                column_config={
-                    "日付": st.column_config.DateColumn(format="YYYY/MM/DD", width="small"),
-                    "ポイント": st.column_config.NumberColumn(format="%d pt", width="small"),
-                    "投資": st.column_config.TextColumn(width="medium"),
-                    "借金": st.column_config.TextColumn(width="medium")
-                }
-            )
-            st.caption("※ 項目が多い場合は、マスの中で自動的に折り返して表示されます。")
-        else:
-            st.warning("まだ記録がありません。")
-
-    # --- タブ4: 設定 ---
     with tab4:
         st.subheader("⚙️ 設定")
         new_nick = st.text_input("ニックネーム変更", value=current_nickname)
@@ -246,15 +243,11 @@ def main():
             idx = m_db[m_db['tmp'] == current_emp_id].index[0]
             m_db.at[idx, 'nickname'] = new_nick
             if new_pw:
-                if len(new_pw) < 4:
-                    st.error("新しいパスワードも４文字以上必要です。")
-                    st.stop()
+                if len(new_pw) < 4: st.error("パスワードは4文字以上"); st.stop()
                 if new_pw == new_pw_conf:
                     m_db.at[idx, 'password_hash'] = str(make_hash(new_pw))
                     st.success("パスワードも更新しました。")
-                else:
-                    st.error("入力された２つのパスワードが一致していません")
-                    st.stop()
+                else: st.error("不一致"); st.stop()
             conn.update(worksheet="UserMaster", data=m_db.drop(columns=['tmp']))
             st.cache_data.clear(); st.success("設定を保存しました。"); time.sleep(1); st.rerun()
 

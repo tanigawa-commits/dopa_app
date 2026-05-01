@@ -24,34 +24,35 @@ st.markdown("""
     .status-label { font-size: 16px; font-weight: bold; margin-bottom: 5px; }
     .status-count { font-size: 15px; color: #333; font-weight: bold; height: 22px; }
 
-    /* 【カレンダー専用】スマホでも7列を維持し、中央に寄せる強力なCSS */
+    /* 【カレンダー隙間制御】 */
+    /* 曜日ヘッダーと日付ボタン行の「隙間」と「幅」を強制固定 */
     div[data-testid="stHorizontalBlock"]:has(button[key*="calbtn_"]), 
     div[data-testid="stHorizontalBlock"]:has(.cal-day-header) {
         display: flex !important;
-        flex-direction: row !important; /* スマホでの縦並びを禁止 */
+        flex-direction: row !important;
         justify-content: center !important;
-        max-width: 280px !important;
+        width: fit-content !important; /* コンテンツに合わせて縮める */
         margin: 0 auto !important;
-        gap: 0px !important;
+        gap: 1px !important; /* 【重要】隙間を1pxに固定 */
     }
 
     div[data-testid="stHorizontalBlock"]:has(button[key*="calbtn_"]) div[data-testid="column"],
     div[data-testid="stHorizontalBlock"]:has(.cal-day-header) div[data-testid="column"] {
-        flex: 0 0 40px !important; /* 各列を40px幅に固定 */
-        min-width: 40px !important;
-        max-width: 40px !important;
+        flex: 0 0 38px !important; /* 列の幅を38pxで固定 */
+        min-width: 38px !important;
+        max-width: 38px !important;
         padding: 0px !important;
         margin: 0px !important;
     }
 
-    /* ボタンを正方形のグリッドにする */
+    /* 日付ボタンを正方形のグリッドにする */
     div[data-testid="stHorizontalBlock"] button[key*="calbtn_"] {
         padding: 0px !important;
         margin: 0px !important;
         font-size: 11px !important;
-        min-height: 40px !important;
-        height: 45px !important;
-        width: 40px !important;
+        min-height: 42px !important;
+        height: 42px !important;
+        width: 38px !important;
         border-radius: 0px !important;
         border: 0.5px solid #eee !important;
         background-color: white !important;
@@ -61,7 +62,7 @@ st.markdown("""
         line-height: 1.2 !important;
     }
     
-    .cal-day-header { text-align: center; font-weight: bold; font-size: 12px; color: #666; width: 40px; }
+    .cal-day-header { text-align: center; font-weight: bold; font-size: 11px; color: #666; width: 38px; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -93,6 +94,7 @@ def load_data_cached(sheet_name):
         return df
     except: return pd.DataFrame()
 
+# 項目定義
 INVESTMENT_ITEMS = ["料理", "掃除", "睡眠が8時間以上", "湯舟に入浴、サウナ", "朝10分前に出社", "身体を動かした", "健康的な食生活", "洗濯", "ニュースをみる", "学習", "読書", "創作", "音楽", "挨拶", "感謝", "家族との時間", "植物", "ペット", "新しい挑戦"]
 DEBT_ITEMS = ["外食オンリー", "掃除なし", "睡眠不足", "シャワーのみ", "朝ギリギリ", "1日ゴロゴロ", "ギルティ食", "アルコール", "タバコ", "スマホ2h以上", "映像2h以上", "SNS2h以上", "ゲーム2h以上", "ソシャゲ起動", "ゲーム課金", "ギャンブル", "無駄な出費", "独り言", "倫理欠如"]
 
@@ -103,7 +105,7 @@ def main():
     if 'form_version' not in st.session_state: st.session_state.form_version = 0
     if 'cal_sel_date' not in st.session_state: st.session_state.cal_sel_date = str(date.today())
 
-    # 認証
+    # 認証セクション
     if not st.session_state.authenticated:
         st.title("🔒 Dopamine Tracker - 認証")
         id_msg = st.empty()
@@ -123,11 +125,11 @@ def main():
                             with st.form("init_reg"):
                                 st.info("初回登録：パスワードを設定してください（４文字以上）")
                                 r_msg = st.empty()
-                                ac, np, npc = st.text_input("合言葉", type="password"), st.text_input("PW", type="password"), st.text_input("確認", type="password")
+                                ac, np, npc = st.text_input("秘密の合言葉", type="password"), st.text_input("PW", type="password"), st.text_input("確認", type="password")
                                 if st.form_submit_button("登録"):
                                     if ac != SECRET_AUTH_CODE: r_msg.error("秘密の合言葉が違います")
                                     elif len(np) < 4: r_msg.error("パスワードは４文字以上を設定してください")
-                                    elif np != npc: r_msg.error("一致していません")
+                                    elif np != npc: r_msg.error("入力された２つのパスワードが一致していません")
                                     else:
                                         r_msg.empty()
                                         cm = conn.read(worksheet="UserMaster", ttl="0s").astype(str)
@@ -188,8 +190,8 @@ def main():
             
             with top_stars_p.container():
                 sc1, sc2 = st.columns(2)
-                with sc1: st.markdown(f'<div class="status-card"><div class="status-label" style="color:#0066cc;">投資型</div><div class="star-display" style="color:#00cc99;">{inv_s}</div><div class="status-count">{inv_txt if "inv_txt" in locals() else inv_t}</div></div>', unsafe_allow_html=True)
-                with sc2: st.markdown(f'<div class="status-card"><div class="status-label" style="color:#cc3333;">借金型</div><div class="star-display" style="color:#ff4b4b;">{debt_s}</div><div class="status-count">{debt_txt if "debt_txt" in locals() else debt_t}</div></div>', unsafe_allow_html=True)
+                with sc1: st.markdown(f'<div class="status-card"><div class="status-label" style="color:#0066cc;">投資型</div><div class="star-display" style="color:#00cc99;">{inv_s}</div><div class="status-count">{inv_t}</div></div>', unsafe_allow_html=True)
+                with sc2: st.markdown(f'<div class="status-card"><div class="status-label" style="color:#cc3333;">借金型</div><div class="star-display" style="color:#ff4b4b;">{debt_s}</div><div class="status-count">{debt_t}</div></div>', unsafe_allow_html=True)
             
             st.metric("本日のポイント", f"{n_inv - n_debt:+d}")
             if st.button("登録する", type="primary", use_container_width=True):
@@ -202,19 +204,19 @@ def main():
                     st.balloons(); time.sleep(2); st.session_state.form_version += 1; st.cache_data.clear(); st.rerun()
         record_ui()
 
-    # --- タブ3: マイデータ（イケてるカレンダー） ---
+    # --- タブ3: マイデータ（隙間制御カレンダー） ---
     with tab3:
         st.subheader("🗓 履歴の確認")
         if 'cal_y' not in st.session_state: st.session_state.cal_y, st.session_state.cal_m = date.today().year, date.today().month
         
-        c1, c2, c3 = st.columns([1, 2, 1])
-        with c1: 
+        c_nav = st.columns([1, 2, 1])
+        with c_nav[0]: 
             if st.button("⬅️", key="prev_m"):
                 st.session_state.cal_m -= 1
                 if st.session_state.cal_m == 0: st.session_state.cal_m, st.session_state.cal_y = 12, st.session_state.cal_y - 1
                 st.rerun()
-        with c2: st.markdown(f"<p style='text-align:center; font-weight:bold;'>{st.session_state.cal_y}年 {st.session_state.cal_m}月</p>", unsafe_allow_html=True)
-        with c3:
+        with c_nav[1]: st.markdown(f"<p style='text-align:center; font-weight:bold; margin-top:5px;'>{st.session_state.cal_y}年 {st.session_state.cal_m}月</p>", unsafe_allow_html=True)
+        with c_nav[2]:
             if st.button("➡️", key="next_m"):
                 st.session_state.cal_m += 1
                 if st.session_state.cal_m == 13: st.session_state.cal_m, st.session_state.cal_y = 1, st.session_state.cal_y + 1

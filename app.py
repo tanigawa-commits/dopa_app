@@ -23,12 +23,12 @@ st.markdown("""
     .status-label { font-size: 16px; font-weight: bold; margin-bottom: 5px; }
     .status-count { font-size: 15px; color: #333; font-weight: bold; height: 22px; }
 
-    /* 【履歴テーブル専用CSS】折り返しと列幅固定を実現 */
+    /* 【履歴テーブル専用CSS】自動折り返しを実現 */
     .history-table {
         width: 100%;
         border-collapse: collapse;
         font-size: 14px;
-        table-layout: fixed; /* 列幅を固定 */
+        table-layout: fixed;
         background-color: white;
     }
     .history-table th, .history-table td {
@@ -36,8 +36,8 @@ st.markdown("""
         padding: 10px 8px;
         text-align: left;
         vertical-align: top;
-        word-wrap: break-word;      /* 折り返し設定 */
-        white-space: normal;        /* 複数行表示を許可 */
+        word-wrap: break-word;
+        white-space: normal;
         overflow-wrap: break-word;
     }
     .history-table th {
@@ -45,10 +45,8 @@ st.markdown("""
         color: #666;
         font-weight: bold;
     }
-    /* 列ごとの幅指定 */
     .col-date { width: 100px; }
     .col-pts { width: 70px; text-align: right !important; }
-    .col-main { width: auto; } /* 投資と借金で残りを分ける */
     </style>
     """, unsafe_allow_html=True)
 
@@ -103,8 +101,8 @@ def main():
             else:
                 with st.spinner("認証中..."):
                     master = load_data_cached("UserMaster")
-                    target_id_norm = normalize_id(target_id)
-                    user_row = master[master['emp_id_norm'] == target_id_norm] if not master.empty else pd.DataFrame()
+                    tid_norm = normalize_id(target_id)
+                    user_row = master[master['emp_id_norm'] == tid_norm] if not master.empty else pd.DataFrame()
                     if user_row.empty: id_msg.error("この社員番号は使用できません")
                     else:
                         id_msg.empty()
@@ -118,17 +116,18 @@ def main():
                                     if ac == SECRET_AUTH_CODE and np == npc and len(np) >= 4:
                                         cm = conn.read(worksheet="UserMaster", ttl="0s").astype(str)
                                         cm['tmp'] = cm['emp_id'].apply(normalize_id)
-                                        idx = cm[cm['tmp'] == target_id_norm].index[0]
-                                        cm.at[idx, 'password_hash'], cm.at[idx, 'nickname'] = str(make_hash(np)), target_id_norm
+                                        idx = cm[cm['tmp'] == tid_norm].index[0]
+                                        cm.at[idx, 'password_hash'], cm.at[idx, 'nickname'] = str(make_hash(np)), tid_norm
                                         conn.update(worksheet="UserMaster", data=cm.drop(columns=['tmp']))
-                                        st.session_state.update({"authenticated":True, "current_user":target_id_norm})
+                                        st.session_state.update({"authenticated":True, "current_user":tid_norm})
                                         st.cache_data.clear(); st.rerun()
+                                    else: st.error("入力内容を確認してください")
                         else:
                             with st.form("login_f"):
                                 ip = st.text_input("パスワード", type="password")
                                 if st.form_submit_button("ログイン"):
                                     if make_hash(ip) == stored_hash:
-                                        st.session_state.update({"authenticated":True, "current_user":target_id_norm})
+                                        st.session_state.update({"authenticated":True, "current_user":tid_norm})
                                         st.cache_data.clear(); st.rerun()
                                     else: st.error("パスワードが違います")
         st.stop()
@@ -136,15 +135,20 @@ def main():
     current_emp_id = st.session_state.current_user
     master_data = load_data_cached("UserMaster")
     user_info = master_data[master_data['emp_id_norm'] == current_emp_id].iloc[0]
-    current_nickname = user_info.get('nickname', current_emp_id)
+    nickname_raw = user_info.get('nickname', current_emp_id)
+    current_nickname = str(nickname_raw) if pd.notna(nickname_raw) and str(nickname_raw).lower() not in ["nan", "none", ""] else current_emp_id
     
     all_recs = load_data_cached("Records")
     user_recs = all_recs[all_recs['real_name_norm'] == current_emp_id] if not all_recs.empty else pd.DataFrame()
 
     st.title("📊 Dopamine Tracker")
+    with st.sidebar:
+        st.write(f"ログイン: **{current_nickname}**")
+        if st.button("ログアウト"): st.session_state.authenticated = False; st.rerun()
+
     tab1, tab2, tab3, tab4 = st.tabs(["今日の記録", "ランキング", "マイデータ", "設定"])
 
-    # --- タブ1: 今日の記録（安定版） ---
+    # --- タブ1: 今日の記録 ---
     with tab1:
         valid_pts = pd.to_numeric(user_recs['points'], errors='coerce').fillna(0)
         st.write(f"### {current_nickname}さんの累計ポイントは {int(valid_pts.sum())} ptです")
@@ -184,34 +188,50 @@ def main():
                     st.balloons(); time.sleep(2); st.session_state.form_version += 1; st.cache_data.clear(); st.rerun()
         record_ui()
 
-    # --- タブ3: マイデータ（新・自動折り返しHTMLテーブル版） ---
+    # --- タブ2: ランキング ---
+    with tab2:
+        st.subheader("🏆 累計ポイントランキング")
+        if not all_recs.empty:
+            rdf = all_recs.copy(); rdf["points"] = pd.to_numeric(rdf["points"], errors='coerce').fillna(0)
+            summary = rdf.groupby("real_name_norm")["points"].sum().reset_index()
+            mini = master_data[['emp_id_norm', 'nickname']].drop_duplicates()
+            summary = summary.merge(mini, left_on='real_name_norm', right_on='emp_id_norm', how='left')
+            summary['ニックネーム'] = summary['nickname'].apply(lambda x: x if pd.notna(x) and str(x).lower() not in ["nan", "none", ""] else "－")
+            summary["順位"] = summary["points"].rank(ascending=False, method='min').astype(int)
+            st.dataframe(summary.sort_values("順位")[["順位", "ニックネーム", "points"]].rename(columns={"points":"累計"}), use_container_width=True, hide_index=True)
+
+    # --- タブ3: マイデータ（HTMLテーブル版） ---
     with tab3:
         st.subheader("📋 全履歴の一覧")
         if not user_recs.empty:
             df_view = user_recs[['date', 'points', 'investment_items', 'debt_items']].copy()
             df_view = df_view.sort_values('date', ascending=False)
-            
-            # HTMLテーブルの組み立て
-            table_html = '<table class="history-table">'
-            table_html += '<tr><th class="col-date">日付</th><th class="col-pts">ポイント</th><th class="col-main">投資</th><th class="col-main">借金</th></tr>'
-            
+            table_html = '<table class="history-table"><tr><th class="col-date">日付</th><th class="col-pts">ポイント</th><th>投資</th><th>借金</th></tr>'
             for _, row in df_view.iterrows():
                 d = row['date'].replace('-', '/')
                 p = f"{int(float(row['points']))} pt"
-                inv = clean_val_for_display(row['investment_items'])
-                dbt = clean_val_for_display(row['debt_items'])
+                inv, dbt = clean_val_for_display(row['investment_items']), clean_val_for_display(row['debt_items'])
                 table_html += f'<tr><td>{d}</td><td style="text-align:right;">{p}</td><td>{inv}</td><td>{dbt}</td></tr>'
-            
             table_html += '</table>'
-            
             st.markdown(table_html, unsafe_allow_html=True)
-            st.caption("※ 項目が多い場合は自動的に折り返して表示されます。")
-        else:
-            st.warning("記録がありません。")
+            st.caption("※ 項目が多い場合は自動的に折り返されます。")
+        else: st.warning("記録がありません。")
 
-    # --- 他タブ ---
-    with tab2: st.subheader("🏆 ランキング") # 以前のランキングコードをここへ
-    with tab4: st.subheader("⚙️ 設定") # 以前の設定コードをここへ
+    # --- タブ4: 設定 ---
+    with tab4:
+        st.subheader("⚙️ 設定")
+        new_nick = st.text_input("ニックネーム変更", value=current_nickname)
+        st.markdown("---")
+        st.write("🔒 パスワードの変更")
+        new_pw, new_pw_c = st.text_input("新PW", type="password"), st.text_input("確認", type="password")
+        if st.button("設定を更新する"):
+            m_db = conn.read(worksheet="UserMaster", ttl="0s").astype(str); m_db['tmp'] = m_db['emp_id'].apply(normalize_id)
+            idx = m_db[m_db['tmp'] == current_emp_id].index[0]; m_db.at[idx, 'nickname'] = new_nick
+            if new_pw:
+                if len(new_pw) < 4: st.error("4文字以上必要です"); st.stop()
+                if new_pw == new_pw_c: m_db.at[idx, 'password_hash'] = str(make_hash(new_pw))
+                else: st.error("一致しません"); st.stop()
+            conn.update(worksheet="UserMaster", data=m_db.drop(columns=['tmp'])); st.cache_data.clear(); st.success("保存しました"); time.sleep(1); st.rerun()
 
 if __name__ == "__main__":
     main()

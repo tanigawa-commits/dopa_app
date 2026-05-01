@@ -189,7 +189,7 @@ def main():
         record_ui()
 
     # --- タブ3: マイデータ ---
-with tab3:
+    with tab3:
         st.subheader("🗓 履歴の確認")
         if 'cal_y' not in st.session_state:
             st.session_state.cal_y = date.today().year

@@ -29,21 +29,23 @@ st.markdown("""
 def make_hash(password): return hashlib.sha256(str.encode(password)).hexdigest()
 
 def clean_val(x):
-    if pd.isna(x): return ""
+    """ 空の値やNoneを全角ハイフンに変換する """
+    if pd.isna(x): return "－"
     s = str(x).strip()
+    if s.lower() in ["nan", "none", "", "null"]: return "－"
     if s.endswith('.0'): s = s[:-2]
-    if s.lower() in ["nan", "none", "", "null"]: return ""
     return s
 
 def normalize_id(x):
-    s = clean_val(x)
-    if not s: return ""
+    s = str(x).strip()
+    if s.endswith('.0'): s = s[:-2]
+    if not s or s.lower() in ["nan", "none"]: return ""
     try: return str(int(float(s))).zfill(4)
     except: return s.zfill(4)
 
 def display_format(val):
     s = clean_val(val)
-    return s if s != "" else "－"
+    return s if s != "－" else "－"
 
 @st.cache_data(ttl=60)
 def load_data_cached(sheet_name):
@@ -68,7 +70,7 @@ def main():
     if 'last_logged_id' not in st.session_state: st.session_state.last_logged_id = ""
     if 'form_version' not in st.session_state: st.session_state.form_version = 0
 
-    # 認証セクション
+    # 認証
     if not st.session_state.authenticated:
         st.title("🔒 Dopamine Tracker - 認証")
         id_msg = st.empty()
@@ -89,7 +91,7 @@ def main():
                         id_msg.empty()
                         stored_hash = clean_val(user_row.iloc[0].get('password_hash', ""))
                         
-                        if stored_hash == "":
+                        if stored_hash == "－":
                             with st.form("init_reg"):
                                 st.info("初回登録：パスワードを設定してください（４文字以上）")
                                 reg_msg = st.empty()
@@ -130,7 +132,7 @@ def main():
     with st.spinner("データ同期中..."):
         master_data = load_data_cached("UserMaster")
         user_info = master_data[master_data['emp_id_norm'] == current_emp_id].iloc[0]
-        current_nickname = clean_val(user_info['nickname']) if clean_val(user_info['nickname']) != "" else current_emp_id
+        current_nickname = clean_val(user_info['nickname']) if clean_val(user_info['nickname']) != "－" else current_emp_id
         all_recs = load_data_cached("Records")
         user_recs = all_recs[all_recs['real_name_norm'] == current_emp_id] if not all_recs.empty else pd.DataFrame()
 
@@ -199,31 +201,36 @@ def main():
             summary["順位"] = summary["points"].rank(ascending=False, method='min').astype(int)
             st.dataframe(summary.sort_values("順位")[["順位", "表示名", "points"]].rename(columns={"points":"累計"}), use_container_width=True, hide_index=True, column_config={"順位":st.column_config.NumberColumn(alignment="left"), "累計":st.column_config.NumberColumn(format="%d", alignment="left")})
 
-    # --- タブ3: マイデータ（カレンダーから全履歴テーブルへ変更） ---
+    # --- タブ3: マイデータ（表形式アップデート） ---
     with tab3:
         st.subheader("📋 全履歴の一覧")
         if not user_recs.empty:
-            # 必要な列だけ抽出し、日付の新しい順に並び替え
+            # データの整形
             display_recs = user_recs[['date', 'points', 'investment_items', 'debt_items']].copy()
             display_recs = display_recs.sort_values('date', ascending=False)
             
-            # 列名の日本語化
-            display_recs.columns = ['日付', 'ポイント', '投資したこと', '自分への借金']
+            # None/空文字の置換
+            display_recs['investment_items'] = display_recs['investment_items'].apply(clean_val)
+            display_recs['debt_items'] = display_recs['debt_items'].apply(clean_val)
             
-            # データフレームで表示（ブラウザ幅に合わせて自動調整）
+            # 列名の変更
+            display_recs.columns = ['日付', 'ポイント', '投資', '借金']
+            
+            # テーブルの表示設定
             st.dataframe(
                 display_recs,
                 use_container_width=True,
                 hide_index=True,
                 column_config={
-                    "ポイント": st.column_config.NumberColumn(format="%d pt"),
-                    "日付": st.column_config.DateColumn(format="YYYY/MM/DD")
+                    "日付": st.column_config.DateColumn(format="YYYY/MM/DD", width="small"),
+                    "ポイント": st.column_config.NumberColumn(format="%d pt", width="small"),
+                    "投資": st.column_config.TextColumn(width="medium"),
+                    "借金": st.column_config.TextColumn(width="medium")
                 }
             )
-            
-            st.caption("※ 表のヘッダーをクリックすると並び替えができます。")
+            st.caption("※ 項目が多い場合は、マスの中で自動的に折り返して表示されます。")
         else:
-            st.warning("まだ記録がありません。「今日の記録」から登録してみましょう！")
+            st.warning("まだ記録がありません。")
 
     # --- タブ4: 設定 ---
     with tab4:

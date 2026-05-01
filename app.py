@@ -12,7 +12,7 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 
 SECRET_AUTH_CODE = "feelist2026" 
 
-# デザインCSS（これまでの指示内容を完全維持）
+# デザインCSS
 st.markdown("""
     <style>
     .status-card {
@@ -39,10 +39,8 @@ def clean_val(x):
 def normalize_id(x):
     s = clean_val(x)
     if not s: return ""
-    try:
-        return str(int(float(s))).zfill(4)
-    except:
-        return s.zfill(4)
+    try: return str(int(float(s))).zfill(4)
+    except: return s.zfill(4)
 
 def display_format(val):
     s = clean_val(val)
@@ -84,10 +82,22 @@ def main():
                     stored_hash = clean_val(user_row.iloc[0].get('password_hash', ""))
                     if stored_hash == "":
                         with st.form("init_reg"):
-                            st.info("初回登録：パスワードを設定してください")
-                            ac, np, npc = st.text_input("秘密の合言葉", type="password"), st.text_input("PW", type="password"), st.text_input("確認", type="password")
-                            if st.form_submit_button("登録"):
-                                if ac == SECRET_AUTH_CODE and np == npc and len(np) >= 4:
+                            # 【修正】注意書きに「4文字以上」を追加
+                            st.info("初回登録：パスワードを設定してください（４文字以上）")
+                            ac = st.text_input("秘密の合言葉", type="password")
+                            np = st.text_input("新パスワード", type="password")
+                            npc = st.text_input("確認用パスワード", type="password")
+                            
+                            if st.form_submit_button("登録してログイン"):
+                                # 【強化】エラーメッセージの個別判定
+                                if ac != SECRET_AUTH_CODE:
+                                    st.error("秘密の合言葉が違います")
+                                elif len(np) < 4:
+                                    st.error("パスワードは４文字以上を設定してください")
+                                elif np != npc:
+                                    st.error("入力された２つのパスワードが一致していません")
+                                else:
+                                    # 全てのチェックを通過
                                     cm = conn.read(worksheet="UserMaster", ttl="0s").astype(str)
                                     cm['tmp'] = cm['emp_id'].apply(normalize_id)
                                     idx = cm[cm['tmp'] == target_id_norm].index[0]
@@ -131,7 +141,7 @@ def main():
         @st.fragment
         def record_ui():
             st.divider()
-            top_stars_p = st.empty() # 星表示の予約席
+            top_stars_p = st.empty()
             v = st.session_state.form_version
             col1, col2 = st.columns(2)
             with col1:
@@ -159,11 +169,8 @@ def main():
                     db['tmp'] = db['real_name'].apply(normalize_id)
                     others = db[~((db['tmp'] == current_emp_id) & (db['date'] == str(target_date)))]
                     conn.update(worksheet="Records", data=pd.concat([others, new_row]).drop(columns=['tmp']).reset_index(drop=True))
-                    
-                    # --- バルーン演出：ここで2秒待機 ---
                     st.balloons()
-                    time.sleep(2) # 2秒間風船を見せる
-                    
+                    time.sleep(2)
                     st.session_state.form_version += 1
                     st.cache_data.clear(); st.rerun()
         record_ui()
@@ -222,6 +229,9 @@ def main():
             idx = m_db[m_db['tmp'] == current_emp_id].index[0]
             m_db.at[idx, 'nickname'] = new_nick
             if new_pw:
+                if len(new_pw) < 4:
+                    st.error("新しいパスワードも４文字以上必要です。")
+                    st.stop()
                 if new_pw == new_pw_conf:
                     m_db.at[idx, 'password_hash'] = str(make_hash(new_pw))
                     st.success("パスワードも更新しました。")
@@ -229,7 +239,7 @@ def main():
                     st.error("パスワードが一致しません。")
                     st.stop()
             conn.update(worksheet="UserMaster", data=m_db.drop(columns=['tmp']))
-            st.cache_data.clear(); st.success("ニックネームを保存しました。"); time.sleep(1); st.rerun()
+            st.cache_data.clear(); st.success("設定を保存しました。"); time.sleep(1); st.rerun()
 
 if __name__ == "__main__":
     main()

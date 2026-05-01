@@ -15,7 +15,7 @@ SECRET_AUTH_CODE = "2026"
 # デザインCSS
 st.markdown("""
     <style>
-    /* 【安定版機能】記録カード */
+    /* 記録カード用（今日の記録タブ） */
     .status-card {
         border: 1px solid #e6e9ef; border-radius: 15px; padding: 15px; text-align: center;
         background-color: white; margin-bottom: 10px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
@@ -24,52 +24,62 @@ st.markdown("""
     .status-label { font-size: 16px; font-weight: bold; margin-bottom: 5px; }
     .status-count { font-size: 15px; color: #333; font-weight: bold; height: 22px; }
 
-    /* 【カレンダー専用：別の解決策】 
-       カレンダーエリア全体を中央に寄せ、列同士の隙間を物理的に消滅させる */
-    .calendar-wrapper {
-        max-width: 280px;
+    /* 【カレンダー改造：HTMLの見た目とボタンの機能を合体】 */
+    .calendar-container {
+        max-width: 300px;
         margin: 0 auto;
     }
-    
-    /* Streamlitの横並びブロック（曜日・日付行）を強制制御 */
-    [data-testid="stHorizontalBlock"]:has(button[key*="calbtn_"]),
-    [data-testid="stHorizontalBlock"]:has(.cal-header-cell) {
-        gap: 0px !important; /* 隙間をゼロに */
+
+    /* 7列をスマホでも絶対維持する設定 */
+    div[data-testid="stHorizontalBlock"]:has(button[key*="calbtn_"]) {
         display: flex !important;
-        flex-direction: row !important; /* スマホでも横並びを維持 */
+        flex-direction: row !important;
         flex-wrap: nowrap !important;
+        gap: 2px !important;
         justify-content: center !important;
     }
 
-    /* 列の幅を完全に固定 */
-    [data-testid="stHorizontalBlock"]:has(button[key*="calbtn_"]) [data-testid="column"],
-    [data-testid="stHorizontalBlock"]:has(.cal-header-cell) [data-testid="column"] {
+    div[data-testid="stHorizontalBlock"]:has(button[key*="calbtn_"]) div[data-testid="column"] {
         width: 40px !important;
         min-width: 40px !important;
-        max-width: 40px !important;
-        padding: 0px !important;
+        flex-basis: 40px !important;
     }
 
-    /* ボタンの見た目をグリッドセルに整形 */
+    /* ボタンを丸い「日付セル」に変身させる */
     button[key*="calbtn_"] {
-        width: 40px !important;
-        height: 45px !important;
+        border-radius: 50% !important;
+        width: 38px !important;
+        height: 38px !important;
         padding: 0px !important;
-        border-radius: 0px !important; /* 四角くする */
-        border: 0.1px solid #f0f0f0 !important;
-        background-color: white !important;
-        font-size: 11px !important;
-        line-height: 1.1 !important;
+        font-size: 13px !important;
+        border: 1px solid transparent !important;
+        background-color: transparent !important;
+        transition: 0.2s;
+        line-height: 1 !important;
+    }
+    
+    button[key*="calbtn_"]:hover {
+        background-color: #f0f0f0 !important;
+        border-color: #ddd !important;
     }
 
-    /* 曜日ヘッダー */
-    .cal-header-cell {
+    /* 記録がある日のボタン（青いドットをイメージ） */
+    button[key*="calbtn_recorded"] {
+        background-color: #e8f4fd !important;
+        font-weight: bold !important;
+        color: #0066cc !important;
+    }
+
+    /* 曜日ラベルのスタイル */
+    .cal-weekday {
         text-align: center;
         font-size: 11px;
         font-weight: bold;
-        color: #999;
-        padding-bottom: 5px;
+        color: #888;
+        width: 40px;
     }
+    .cal-sat { color: #2196F3; }
+    .cal-sun { color: #F44336; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -111,7 +121,7 @@ def main():
     if 'form_version' not in st.session_state: st.session_state.form_version = 0
     if 'cal_sel_date' not in st.session_state: st.session_state.cal_sel_date = str(date.today())
 
-    # 認証セクション
+    # 認証
     if not st.session_state.authenticated:
         st.title("🔒 Dopamine Tracker - 認証")
         id_msg = st.empty()
@@ -131,7 +141,7 @@ def main():
                             with st.form("init_reg"):
                                 st.info("初回登録：パスワードを設定してください（４文字以上）")
                                 r_msg = st.empty()
-                                ac, np, npc = st.text_input("秘密の合言葉", type="password"), st.text_input("PW", type="password"), st.text_input("確認", type="password")
+                                ac, np, npc = st.text_input("合言葉", type="password"), st.text_input("PW", type="password"), st.text_input("確認", type="password")
                                 if st.form_submit_button("登録"):
                                     if ac != SECRET_AUTH_CODE: r_msg.error("秘密の合言葉が違います")
                                     elif len(np) < 4: r_msg.error("パスワードは４文字以上")
@@ -166,7 +176,7 @@ def main():
     st.title("📊 Dopamine Tracker")
     tab1, tab2, tab3, tab4 = st.tabs(["今日の記録", "ランキング", "マイデータ", "設定"])
 
-    # --- タブ1: 今日の記録（安定版維持） ---
+    # --- 今日の記録 ---
     with tab1:
         total_pts = pd.to_numeric(user_recs['points'], errors='coerce').fillna(0).sum()
         st.write(f"### {current_nickname}さんの累計ポイントは {total_pts:g} ptです")
@@ -205,156 +215,76 @@ def main():
                     st.balloons(); time.sleep(2); st.session_state.form_version += 1; st.cache_data.clear(); st.rerun()
         record_ui()
 
-# --- タブ3: マイデータ（HTML直接描画カレンダー） ---
+    # --- タブ3: マイデータ（新・クリック可能グリッドカレンダー） ---
     with tab3:
         st.subheader("🗓 履歴の確認")
-        if 'cal_y' not in st.session_state: 
-            st.session_state.cal_y, st.session_state.cal_m = date.today().year, date.today().month
-
-        # 月切り替え（ここだけcolumnsを使用、3列なのでモバイルでも崩れにくい）
+        if 'cal_y' not in st.session_state: st.session_state.cal_y, st.session_state.cal_m = date.today().year, date.today().month
+        
+        # 月の操作
         c_nav = st.columns([1, 2, 1])
         with c_nav[0]: 
             if st.button("⬅️", key="prev_m"):
                 st.session_state.cal_m -= 1
-                if st.session_state.cal_m == 0: 
-                    st.session_state.cal_m, st.session_state.cal_y = 12, st.session_state.cal_y - 1
+                if st.session_state.cal_m == 0: st.session_state.cal_m, st.session_state.cal_y = 12, st.session_state.cal_y - 1
                 st.rerun()
-        with c_nav[1]: 
-            st.markdown(f"<p style='text-align:center; font-weight:bold; margin-top:5px;'>{st.session_state.cal_y}年 {st.session_state.cal_m}月</p>", unsafe_allow_html=True)
+        with c_nav[1]: st.markdown(f"<p style='text-align:center; font-weight:bold; font-size:1.2rem;'>{st.session_state.cal_y}年 {st.session_state.cal_m}月</p>", unsafe_allow_html=True)
         with c_nav[2]:
             if st.button("➡️", key="next_m"):
                 st.session_state.cal_m += 1
-                if st.session_state.cal_m == 13: 
-                    st.session_state.cal_m, st.session_state.cal_y = 1, st.session_state.cal_y + 1
+                if st.session_state.cal_m == 13: st.session_state.cal_m, st.session_state.cal_y = 1, st.session_state.cal_y + 1
                 st.rerun()
 
-        # 記録済み日付のセット
-        rec_dates = set(user_recs['date'].unique().tolist()) if not user_recs.empty else set()
-
-        # ポイントデータをdict化（日付→ポイント）
-        pts_by_date = {}
-        if not user_recs.empty:
-            for _, row in user_recs.iterrows():
-                pts_by_date[row['date']] = row['points']
-
-        # HTMLカレンダー生成
+        # カレンダー本体
+        st.markdown('<div class="calendar-container">', unsafe_allow_html=True)
+        
+        # 曜日ヘッダー
+        h_cols = st.columns(7)
+        weekdays = ["月", "火", "水", "木", "金", "土", "日"]
+        for i, d in enumerate(weekdays):
+            cls = "cal-weekday"
+            if i == 5: cls += " cal-sat"
+            if i == 6: cls += " cal-sun"
+            h_cols[i].markdown(f'<div class="{cls}">{d}</div>', unsafe_allow_html=True)
+        
+        # 日付ボタン
         cal = calendar.monthcalendar(st.session_state.cal_y, st.session_state.cal_m)
-        
-        cal_html = """
-        <style>
-        .cal-table { 
-            width: 100%; 
-            border-collapse: collapse; 
-            table-layout: fixed;
-            font-size: 13px;
-        }
-        .cal-table th { 
-            text-align: center; 
-            padding: 6px 2px; 
-            color: #888; 
-            font-weight: bold;
-            font-size: 12px;
-        }
-        .cal-table td { 
-            text-align: center; 
-            padding: 4px 2px; 
-            vertical-align: middle;
-        }
-        .cal-day {
-            display: inline-block;
-            width: 36px;
-            height: 36px;
-            line-height: 36px;
-            border-radius: 50%;
-            cursor: pointer;
-            font-size: 13px;
-        }
-        .cal-day:hover { background-color: #f0f0f0; }
-        .cal-day-recorded { 
-            background-color: #e8f4fd; 
-            border-radius: 50%;
-            font-weight: bold;
-            color: #0066cc;
-        }
-        .cal-day-today {
-            border: 2px solid #0066cc;
-            border-radius: 50%;
-            font-weight: bold;
-        }
-        .cal-dot { font-size: 8px; display: block; margin-top: -4px; }
-        .cal-sat { color: #2196F3; }
-        .cal-sun { color: #F44336; }
-        </style>
-        <table class="cal-table">
-        <tr>
-            <th>月</th><th>火</th><th>水</th><th>木</th><th>金</th>
-            <th class="cal-sat">土</th><th class="cal-sun">日</th>
-        </tr>
-        """
-        
-        today_str = str(date.today())
+        rec_dates = set(user_recs['date'].unique().tolist()) if not user_recs.empty else set()
         
         for week in cal:
-            cal_html += "<tr>"
+            w_cols = st.columns(7)
             for i, day in enumerate(week):
                 if day == 0:
-                    cal_html += "<td></td>"
+                    w_cols[i].write("")
                 else:
                     d_str = f"{st.session_state.cal_y}-{st.session_state.cal_m:02d}-{day:02d}"
-                    is_recorded = d_str in rec_dates
-                    is_today = d_str == today_str
+                    is_rec = d_str in rec_dates
+                    # 記録がある日はキーを変えてCSSで色を付ける
+                    btn_key = f"calbtn_recorded_{d_str}" if is_rec else f"calbtn_{d_str}"
+                    # 記録がある日には🔵を、ない日は数字のみ
+                    label = f"{day}\n🔵" if is_rec else f"{day}"
                     
-                    day_class = "cal-day"
-                    if is_recorded: day_class += " cal-day-recorded"
-                    if is_today: day_class += " cal-day-today"
-                    if i == 5: day_class += " cal-sat"
-                    if i == 6: day_class += " cal-sun"
-                    
-                    dot = '<span class="cal-dot">🔵</span>' if is_recorded else '<span class="cal-dot">&nbsp;</span>'
-                    
-                    cal_html += f'<td><span class="{day_class}">{day}{dot}</span></td>'
-            cal_html += "</tr>"
+                    if w_cols[i].button(label, key=btn_key):
+                        st.session_state.cal_sel_date = d_str
         
-        cal_html += "</table>"
+        st.markdown('</div>', unsafe_allow_html=True)
         
-        st.markdown(cal_html, unsafe_allow_html=True)
-
-        # 日付選択UI（HTMLカレンダーはクリックイベントをStreamlitに渡せないため、selectboxで選択）
+        # 詳細表示
         st.divider()
-        
-        # その月の記録済み日付をプルダウンで選択
-        month_dates = []
-        cal_flat = calendar.monthcalendar(st.session_state.cal_y, st.session_state.cal_m)
-        for week in cal_flat:
-            for day in week:
-                if day != 0:
-                    d_str = f"{st.session_state.cal_y}-{st.session_state.cal_m:02d}-{day:02d}"
-                    month_dates.append(d_str)
-        
-        # デフォルト選択を今月の範囲内に収める
-        default_sel = st.session_state.cal_sel_date
-        if default_sel not in month_dates:
-            default_sel = month_dates[-1] if month_dates else month_dates[0]
-        
-        sel_d = st.selectbox(
-            "📅 日付を選んで詳細を確認", 
-            options=month_dates,
-            index=month_dates.index(default_sel) if default_sel in month_dates else 0,
-            key=f"date_sel_{st.session_state.cal_y}_{st.session_state.cal_m}"
-        )
-        st.session_state.cal_sel_date = sel_d
-        
+        sel_d = st.session_state.cal_sel_date
         det = user_recs[user_recs['date'] == sel_d]
         if not det.empty:
             d = det.iloc[0]
-            pts = clean_val(d['points'])
-            st.info(f"📅 {sel_d} の詳細\n\n💰 ポイント: {pts}pt\n\n🟢 投資型: {display_format(d['investment_items'])}\n\n🔴 借金型: {display_format(d['debt_items'])}")
-        else: 
+            st.info(f"📅 {sel_d} の詳細\n\n🟢 投資型: {display_format(d['investment_items'])}\n\n🔴 借金型: {display_format(d['debt_items'])}")
+        else:
             st.warning(f"{sel_d} の記録はありません。")
 
-    # --- 他タブ（省略なし） ---
-    with tab2: st.subheader("🏆 ランキング"); st.write("（安定版のランキングコードがここに入ります）")
-    with tab4: st.subheader("⚙️ 設定"); st.write("（安定版の設定コードがここに入ります）")
+    # --- 他タブ ---
+    with tab2:
+        st.subheader("🏆 ランキング")
+        # ランキングのロジックをここに維持
+    with tab4:
+        st.subheader("⚙️ 設定")
+        # 設定のロジックをここに維持
 
 if __name__ == "__main__":
     main()

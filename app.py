@@ -25,7 +25,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. 高速クリーニング・ヘルパー関数 ---
+# --- 2. ヘルパー関数 ---
 
 def make_hash(password): return hashlib.sha256(str.encode(password)).hexdigest()
 
@@ -69,52 +69,62 @@ def main():
     if 'last_logged_id' not in st.session_state: st.session_state.last_logged_id = ""
     if 'form_version' not in st.session_state: st.session_state.form_version = 0
 
-    # 認証
+    # 認証セクション
     if not st.session_state.authenticated:
         st.title("🔒 Dopamine Tracker - 認証")
         target_id = st.text_input("社員番号(4桁)", value=st.session_state.last_logged_id, max_chars=4)
+        
         if target_id:
-            with st.spinner("認証中..."):
-                master = load_data_cached("UserMaster")
-                target_id_norm = normalize_id(target_id)
-                user_row = master[master['emp_id_norm'] == target_id_norm] if not master.empty else pd.DataFrame()
-                if not user_row.empty:
-                    stored_hash = clean_val(user_row.iloc[0].get('password_hash', ""))
-                    if stored_hash == "":
-                        with st.form("init_reg"):
-                            # 【修正】注意書きに「4文字以上」を追加
-                            st.info("初回登録：パスワードを設定してください（４文字以上）")
-                            ac = st.text_input("秘密の合言葉", type="password")
-                            np = st.text_input("新パスワード", type="password")
-                            npc = st.text_input("確認用パスワード", type="password")
-                            
-                            if st.form_submit_button("登録してログイン"):
-                                # 【強化】エラーメッセージの個別判定
-                                if ac != SECRET_AUTH_CODE:
-                                    st.error("秘密の合言葉が違います")
-                                elif len(np) < 4:
-                                    st.error("パスワードは４文字以上を設定してください")
-                                elif np != npc:
-                                    st.error("入力された２つのパスワードが一致していません")
-                                else:
-                                    # 全てのチェックを通過
-                                    cm = conn.read(worksheet="UserMaster", ttl="0s").astype(str)
-                                    cm['tmp'] = cm['emp_id'].apply(normalize_id)
-                                    idx = cm[cm['tmp'] == target_id_norm].index[0]
-                                    cm.at[idx, 'password_hash'], cm.at[idx, 'nickname'] = str(make_hash(np)), target_id_norm
-                                    conn.update(worksheet="UserMaster", data=cm.drop(columns=['tmp']))
-                                    st.session_state.update({"authenticated":True, "current_user":target_id_norm, "last_logged_id":target_id_norm})
-                                    st.cache_data.clear(); st.rerun()
+            # --- 1. 桁数チェック ---
+            if len(target_id) != 4:
+                st.error("社員番号は4桁で入力してください")
+            else:
+                with st.spinner("認証中..."):
+                    master = load_data_cached("UserMaster")
+                    target_id_norm = normalize_id(target_id)
+                    user_row = master[master['emp_id_norm'] == target_id_norm] if not master.empty else pd.DataFrame()
+                    
+                    # --- 2. 存在チェック ---
+                    if user_row.empty:
+                        st.error("この社員番号は使用できません")
                     else:
-                        with st.form("login_f"):
-                            ip = st.text_input("パスワード", type="password")
-                            if st.form_submit_button("ログイン"):
-                                if make_hash(ip) == stored_hash:
-                                    st.session_state.update({"authenticated":True, "current_user":target_id_norm, "last_logged_id":target_id_norm})
-                                    st.cache_data.clear(); st.rerun()
-                                else: st.error("パスワードが違います")
+                        stored_hash = clean_val(user_row.iloc[0].get('password_hash', ""))
+                        
+                        if stored_hash == "":
+                            # 初回登録フォーム
+                            with st.form("init_reg"):
+                                st.info("初回登録：パスワードを設定してください（４文字以上）")
+                                ac = st.text_input("秘密の合言葉", type="password")
+                                np = st.text_input("新パスワード", type="password")
+                                npc = st.text_input("確認用パスワード", type="password")
+                                
+                                if st.form_submit_button("登録してログイン"):
+                                    if ac != SECRET_AUTH_CODE:
+                                        st.error("秘密の合言葉が違います")
+                                    elif len(np) < 4:
+                                        st.error("パスワードは４文字以上を設定してください")
+                                    elif np != npc:
+                                        st.error("入力された２つのパスワードが一致していません")
+                                    else:
+                                        cm = conn.read(worksheet="UserMaster", ttl="0s").astype(str)
+                                        cm['tmp'] = cm['emp_id'].apply(normalize_id)
+                                        idx = cm[cm['tmp'] == target_id_norm].index[0]
+                                        cm.at[idx, 'password_hash'], cm.at[idx, 'nickname'] = str(make_hash(np)), target_id_norm
+                                        conn.update(worksheet="UserMaster", data=cm.drop(columns=['tmp']))
+                                        st.session_state.update({"authenticated":True, "current_user":target_id_norm, "last_logged_id":target_id_norm})
+                                        st.cache_data.clear(); st.rerun()
+                        else:
+                            # 通常ログインフォーム
+                            with st.form("login_f"):
+                                ip = st.text_input("パスワード", type="password")
+                                if st.form_submit_button("ログイン"):
+                                    if make_hash(ip) == stored_hash:
+                                        st.session_state.update({"authenticated":True, "current_user":target_id_norm, "last_logged_id":target_id_norm})
+                                        st.cache_data.clear(); st.rerun()
+                                    else: st.error("パスワードが違います")
         st.stop()
 
+    # --- アプリ本体 ---
     current_emp_id = st.session_state.current_user
     with st.spinner("データ同期中..."):
         master_data = load_data_cached("UserMaster")
@@ -153,8 +163,8 @@ def main():
             
             n_inv, n_debt = len(sel_inv), len(sel_debt)
             inv_s, debt_s = "★" * min(n_inv, 10) + "☆" * max(0, 10 - n_inv), "★" * min(n_debt, 10) + "☆" * max(0, 10 - n_debt)
-            inv_txt = f"{n_inv}個実施！" if n_inv > 0 and n_inv <= 10 else ("10個以上実施！" if n_inv > 10 else "")
-            debt_txt = f"{n_debt}個実施！" if n_debt > 0 and n_debt <= 10 else ("10個以上実施！" if n_debt > 10 else "")
+            inv_txt = f"{n_inv}個実施！" if 0 < n_inv <= 10 else ("10個以上実施！" if n_inv > 10 else "")
+            debt_txt = f"{n_debt}個実施！" if 0 < n_debt <= 10 else ("10個以上実施！" if n_debt > 10 else "")
 
             with top_stars_p.container():
                 sc1, sc2 = st.columns(2)
@@ -236,7 +246,7 @@ def main():
                     m_db.at[idx, 'password_hash'] = str(make_hash(new_pw))
                     st.success("パスワードも更新しました。")
                 else:
-                    st.error("パスワードが一致しません。")
+                    st.error("入力された２つのパスワードが一致していません")
                     st.stop()
             conn.update(worksheet="UserMaster", data=m_db.drop(columns=['tmp']))
             st.cache_data.clear(); st.success("設定を保存しました。"); time.sleep(1); st.rerun()

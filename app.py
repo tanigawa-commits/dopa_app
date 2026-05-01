@@ -32,6 +32,7 @@ def clean_val_for_display(x):
     """ 表の表示用：空の値やNoneを全角ハイフンにする """
     if pd.isna(x): return "－"
     s = str(x).strip()
+    # 完全に空、またはNoneという文字列であればハイフンを返す
     if s.lower() in ["nan", "none", "", "null"]: return "－"
     return s
 
@@ -120,7 +121,7 @@ def main():
                                     else: login_msg.error("パスワードが違います")
         st.stop()
 
-    # データ読み込み
+    # データ読み出し
     current_emp_id = st.session_state.current_user
     master_data = load_data_cached("UserMaster")
     user_info = master_data[master_data['emp_id_norm'] == current_emp_id].iloc[0]
@@ -139,7 +140,7 @@ def main():
 
     tab1, tab2, tab3, tab4 = st.tabs(["今日の記録", "ランキング", "マイデータ", "設定"])
 
-    # --- タブ1: 今日の記録 ---
+    # --- 今日の記録 ---
     with tab1:
         valid_pts = pd.to_numeric(user_recs['points'], errors='coerce').fillna(0)
         total_pts = int(valid_pts.sum())
@@ -183,34 +184,41 @@ def main():
                     st.cache_data.clear(); st.rerun()
         record_ui()
 
-    # --- タブ3: マイデータ（表形式 完成版） ---
+    # --- タブ3: マイデータ（表形式・表示列 完全復旧版） ---
     with tab3:
         st.subheader("📋 全履歴の一覧")
         if not user_recs.empty:
-            # 表示用データの抽出と並べ替え
+            # 1. 必要な列を確実に抽出
             df_view = user_recs[['date', 'points', 'investment_items', 'debt_items']].copy()
-            df_view['date'] = pd.to_datetime(df_view['date']).dt.date
-            df_view = df_view.sort_values('date', ascending=False)
             
-            # None/nanを全角ハイフン「－」に置換
+            # 2. 型変換とクリーンアップ（Noneをハイフンへ）
+            df_view['date'] = pd.to_datetime(df_view['date']).dt.date
+            df_view['points'] = pd.to_numeric(df_view['points'], errors='coerce').fillna(0).astype(int)
             df_view['investment_items'] = df_view['investment_items'].apply(clean_val_for_display)
             df_view['debt_items'] = df_view['debt_items'].apply(clean_val_for_display)
             
-            # 数値型に変換してpt表記を適用
-            df_view['points'] = pd.to_numeric(df_view['points'], errors='coerce').fillna(0)
+            # 3. 列名のリネーム
+            df_view = df_view.rename(columns={
+                'date': '日付',
+                'points': 'ポイント',
+                'investment_items': '投資',
+                'debt_items': '借金'
+            })
             
-            # 表示名の変更：投資したこと→投資、自分への借金→借金
-            df_view.columns = ['日付', 'ポイント', '投資', '借金']
+            # 4. 日付順にソート
+            df_view = df_view.sort_values('日付', ascending=False)
             
+            # 5. 表の表示（column_orderで全列の表示を強制）
             st.dataframe(
                 df_view,
                 use_container_width=True,
                 hide_index=True,
+                column_order=("日付", "ポイント", "投資", "借金"), # ここで列の並びと存在を確定
                 column_config={
-                    "日付": st.column_config.DateColumn(format="YYYY/MM/DD", width="small"),
-                    "ポイント": st.column_config.NumberColumn(format="%d pt", width="small"),
-                    "投資": st.column_config.TextColumn(width="large"), # 幅を広げて折り返し
-                    "借金": st.column_config.TextColumn(width="large")  # 投資と同じ幅に設定
+                    "日付": st.column_config.DateColumn("日付", format="YYYY/MM/DD", width="small"),
+                    "ポイント": st.column_config.NumberColumn("ポイント", format="%d pt", width="small"),
+                    "投資": st.column_config.TextColumn("投資", width="large"), # 幅を広げて折り返し
+                    "借金": st.column_config.TextColumn("借金", width="large")  # 投資と同じ幅に設定
                 }
             )
             st.caption("※ 項目が多い場合はセル内で自動的に折り返されます。")

@@ -12,7 +12,7 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 
 SECRET_AUTH_CODE = "feelist2026" 
 
-# デザインCSS（他画面に干渉しないようクラスを限定）
+# デザインCSS（他の画面を壊さないよう、クラス名を限定して定義）
 st.markdown("""
     <style>
     .status-card {
@@ -21,7 +21,7 @@ st.markdown("""
     }
     .star-display { font-size: 26px; letter-spacing: 2px; margin: 5px 0; font-family: monospace; }
     .status-label { font-size: 16px; font-weight: bold; margin-bottom: 5px; }
-    .status-count { font-size: 14px; color: #5e6064; height: 20px; } /* テキスト用の高さを確保 */
+    .status-count { font-size: 15px; color: #333; font-weight: bold; height: 22px; } /* 文字を濃く、高さを固定 */
     </style>
     """, unsafe_allow_html=True)
 
@@ -62,7 +62,7 @@ def main():
     if 'last_logged_id' not in st.session_state: st.session_state.last_logged_id = ""
     if 'form_version' not in st.session_state: st.session_state.form_version = 0
 
-    # 認証セクション
+    # 認証
     if not st.session_state.authenticated:
         st.title("🔒 Dopamine Tracker - 認証")
         target_id = st.text_input("社員番号(4桁)", value=st.session_state.last_logged_id, max_chars=4)
@@ -100,6 +100,7 @@ def main():
     all_recs = load_data_cached("Records")
     user_recs = all_recs[all_recs['real_name'].apply(normalize_id) == current_emp_id] if not all_recs.empty else pd.DataFrame()
 
+    # --- メインタイトル ---
     st.title("📊 Dopamine Tracker")
     with st.sidebar:
         st.write(f"ログイン: **{current_nickname}**")
@@ -119,7 +120,7 @@ def main():
         @st.fragment
         def record_ui():
             st.divider()
-            # 【重要】星表示をチェックボックスの上に置くためのプレースホルダー
+            # ☆表示用エリアを最初に定義（タイトルの直下に来る）
             top_stars_p = st.empty()
             
             v = st.session_state.form_version
@@ -131,15 +132,21 @@ def main():
                 st.markdown("#### 🔴 借金型")
                 sel_debt = [i for i in DEBT_ITEMS if st.checkbox(i, key=f"debt_{i}_{v}")]
             
-            # 星表示ロジック
+            # 個数計算
             n_inv, n_debt = len(sel_inv), len(sel_debt)
             inv_s, debt_s = "★" * min(n_inv, 10) + "☆" * max(0, 10 - n_inv), "★" * min(n_debt, 10) + "☆" * max(0, 10 - n_debt)
             
-            # 【重要】個数表示ロジック（0個なら非表示、11個以上なら「10個以上」）
-            inv_txt = f"{n_inv}個実施！" if 0 < n_inv <= 10 else ("10個以上実施！" if n_inv > 10 else "")
-            debt_txt = f"{n_debt}個実施！" if 0 < n_debt <= 10 else ("10個以上実施！" if n_debt > 10 else "")
+            # 【重要】テキスト表示ロジック
+            # 0個なら空文字、1〜10個ならそのまま、11個以上なら「10個以上」
+            inv_txt = ""
+            if n_inv > 0:
+                inv_txt = f"{n_inv}個実施！" if n_inv <= 10 else "10個以上実施！"
+            
+            debt_txt = ""
+            if n_debt > 0:
+                debt_txt = f"{n_debt}個実施！" if n_debt <= 10 else "10個以上実施！"
 
-            # プレースホルダーに星カードを流し込み
+            # 星カードと「xx個実施！」をプレースホルダーへ流し込む
             with top_stars_p.container():
                 sc1, sc2 = st.columns(2)
                 with sc1: st.markdown(f'<div class="status-card"><div class="status-label" style="color:#0066cc;">投資型</div><div class="star-display" style="color:#00cc99;">{inv_s}</div><div class="status-count">{inv_txt}</div></div>', unsafe_allow_html=True)
@@ -199,6 +206,7 @@ def main():
 
     # --- タブ4: 設定 ---
     with tab4:
+        st.subheader("⚙️ 設定")
         new_nick = st.text_input("ニックネーム変更", value=current_nickname)
         if st.button("保存"):
             m_db = conn.read(worksheet="UserMaster", ttl="0s").astype(str)

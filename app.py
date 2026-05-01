@@ -22,6 +22,29 @@ st.markdown("""
     .star-display { font-size: 26px; letter-spacing: 2px; margin: 5px 0; font-family: monospace; }
     .status-label { font-size: 16px; font-weight: bold; margin-bottom: 5px; }
     .status-count { font-size: 15px; color: #333; font-weight: bold; height: 22px; }
+
+    /* カレンダー強制横並び */
+    div[data-testid="stHorizontalBlock"] {
+        flex-wrap: nowrap !important;
+        gap: 2px !important;
+    }
+    div[data-testid="stHorizontalBlock"] > div[data-testid="column"] {
+        min-width: 0 !important;
+        flex: 1 1 0 !important;
+        padding: 0 !important;
+        overflow: hidden !important;
+    }
+    /* カレンダーボタン */
+    div[data-testid="stHorizontalBlock"] button[kind="secondary"] {
+        width: 100% !important;
+        min-width: 0 !important;
+        padding: 2px 0px !important;
+        font-size: 11px !important;
+        line-height: 1.3 !important;
+        border-radius: 6px !important;
+        white-space: pre-wrap !important;
+        height: 44px !important;
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -166,13 +189,16 @@ def main():
         record_ui()
 
     # --- タブ3: マイデータ ---
-    with tab3:
+with tab3:
         st.subheader("🗓 履歴の確認")
+        if 'cal_y' not in st.session_state:
+            st.session_state.cal_y = date.today().year
+            st.session_state.cal_m = date.today().month
 
         # 月切り替えナビ
-        c_nav = st.columns([1, 2, 1])
+        c_nav = st.columns([1, 3, 1])
         with c_nav[0]:
-            if st.button("⬅️", key="prev_m"):
+            if st.button("◀", key="prev_m", use_container_width=True):
                 st.session_state.cal_m -= 1
                 if st.session_state.cal_m == 0:
                     st.session_state.cal_m, st.session_state.cal_y = 12, st.session_state.cal_y - 1
@@ -180,7 +206,7 @@ def main():
         with c_nav[1]:
             st.markdown(f"<p style='text-align:center;font-weight:bold;margin-top:5px;'>{st.session_state.cal_y}年 {st.session_state.cal_m}月</p>", unsafe_allow_html=True)
         with c_nav[2]:
-            if st.button("➡️", key="next_m"):
+            if st.button("▶", key="next_m", use_container_width=True):
                 st.session_state.cal_m += 1
                 if st.session_state.cal_m == 13:
                     st.session_state.cal_m, st.session_state.cal_y = 1, st.session_state.cal_y + 1
@@ -189,85 +215,67 @@ def main():
         # 記録済み日付セット
         rec_dates = set(user_recs['date'].unique().tolist()) if not user_recs.empty else set()
         today_str = str(date.today())
-        selected_date_from_state = st.session_state.get("cal_sel_date", today_str)
-
-        # カレンダーHTML生成
-        cal = calendar.monthcalendar(st.session_state.cal_y, st.session_state.cal_m)
-        cal_rows_html = ""
-        for week in cal:
-            cal_rows_html += "<tr>"
-            for i, day in enumerate(week):
-                if day == 0:
-                    cal_rows_html += "<td></td>"
-                else:
-                    d_str = f"{st.session_state.cal_y}-{st.session_state.cal_m:02d}-{day:02d}"
-                    extra_class = ""
-                    if i == 5: extra_class += " sat"
-                    if i == 6: extra_class += " sun"
-                    if d_str == today_str: extra_class += " today"
-                    if d_str in rec_dates: extra_class += " recorded"
-                    if d_str == selected_date_from_state: extra_class += " selected"
-                    dot = "🔵" if d_str in rec_dates else "&nbsp;"
-                    cal_rows_html += (
-                        f'<td><div class="day{extra_class}" data-date="{d_str}">'
-                        f'<span class="daynum">{day}</span>'
-                        f'<span class="dot">{dot}</span></div></td>'
-                    )
-            cal_rows_html += "</tr>"
-
-        # ★ポイントごとに色を変えたい場合はここでpts_by_dateも渡せる
-        html_code = f"""
-        <style>
-            body {{ margin: 0; padding: 0; font-family: sans-serif; }}
-            table {{ width: 100%; border-collapse: collapse; table-layout: fixed; }}
-            th {{ text-align: center; padding: 8px 2px; font-size: 12px; color: #888; font-weight: bold; }}
-            td {{ text-align: center; padding: 3px 1px; }}
-            .day {{
-                display: inline-flex; flex-direction: column;
-                align-items: center; justify-content: center;
-                width: 40px; height: 40px; border-radius: 50%;
-                cursor: pointer; font-size: 13px; font-weight: 500;
-                transition: background 0.15s; box-sizing: border-box;
-            }}
-            .day:hover {{ background-color: #e8e8e8; }}
-            .day.sat .daynum {{ color: #2196F3; }}
-            .day.sun .daynum {{ color: #F44336; }}
-            .day.today {{ border: 2px solid #0066cc; }}
-            .day.recorded {{ background-color: #ddeeff; }}
-            .day.recorded .daynum {{ color: #0044aa; font-weight: bold; }}
-            .day.selected {{ background-color: #0066cc !important; border: none !important; }}
-            .day.selected .daynum {{ color: white !important; }}
-            .daynum {{ font-size: 13px; line-height: 1; }}
-            .dot {{ font-size: 7px; line-height: 1; margin-top: 1px; min-height: 8px; }}
-        </style>
-        <table>
-            <tr>
-                <th>月</th><th>火</th><th>水</th><th>木</th><th>金</th>
-                <th style="color:#2196F3">土</th>
-                <th style="color:#F44336">日</th>
-            </tr>
-            {cal_rows_html}
-        </table>
-        <script>
-            // ★ クリックしたらURLパラメータに日付を書き込んでリロード
-            document.querySelectorAll('.day').forEach(function(el) {{
-                el.addEventListener('click', function() {{
-                    var d = this.getAttribute('data-date');
-                    // 現在のURLにパラメータを付与してStreamlitをリロード
-                    var url = window.parent.location.href.split('?')[0] + '?cal_date=' + d;
-                    window.parent.location.href = url;
-                }});
-            }});
-        </script>
-        """
-
-        components.html(html_code, height=300, scrolling=False)
-
-        # 詳細表示
-        st.divider()
         sel_d = st.session_state.get("cal_sel_date", today_str)
-        st.markdown(f"**📅 {sel_d} の記録**")
 
+        # 曜日ヘッダー（HTMLで描画、ボタン行と幅を合わせる）
+        st.markdown("""
+        <div style="display:grid; grid-template-columns:repeat(7,1fr); text-align:center;
+                    font-size:11px; font-weight:bold; color:#999; padding:4px 0 2px 0;
+                    gap:2px;">
+            <div>月</div><div>火</div><div>水</div><div>木</div>
+            <div>金</div><div style="color:#2196F3">土</div><div style="color:#F44336">日</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # カレンダーボタン描画
+        cal = calendar.monthcalendar(st.session_state.cal_y, st.session_state.cal_m)
+        for week in cal:
+            cols = st.columns(7)
+            for i, day in enumerate(week):
+                with cols[i]:
+                    if day == 0:
+                        # 空白セル（見えないボタン）
+                        st.markdown("<div style='height:44px'></div>", unsafe_allow_html=True)
+                    else:
+                        d_str = f"{st.session_state.cal_y}-{st.session_state.cal_m:02d}-{day:02d}"
+                        is_rec = d_str in rec_dates
+                        is_today = d_str == today_str
+                        is_sel = d_str == sel_d
+
+                        # ラベル組み立て
+                        dot = "🔵" if is_rec else ""
+                        label = f"{day}\n{dot}" if dot else str(day)
+
+                        # ボタンを押したらsession_state更新
+                        if st.button(label, key=f"cal_{d_str}", use_container_width=True):
+                            st.session_state.cal_sel_date = d_str
+                            st.rerun()
+
+                        # 選択・今日・記録のスタイルをボタンに上書き
+                        btn_key = f"cal_{d_str}"
+                        if is_sel:
+                            bg, color, border = "#0066cc", "white", "none"
+                        elif is_rec:
+                            bg, color, border = "#ddeeff", "#0044aa", "1px solid #aaccee"
+                        elif is_today:
+                            bg, color, border = "white", "#0066cc", "2px solid #0066cc"
+                        else:
+                            bg, color, border = "white", "#333", "1px solid #ddd"
+
+                        st.markdown(f"""
+                        <style>
+                        div[data-testid="stHorizontalBlock"] button[key="{btn_key}"],
+                        button[data-testid="baseButton-secondary"][kind="secondary"]:has(+ * [data-key="{btn_key}"]) {{
+                            background-color: {bg} !important;
+                            color: {color} !important;
+                            border: {border} !important;
+                        }}
+                        </style>
+                        """, unsafe_allow_html=True)
+
+        # 詳細表示エリア
+        st.divider()
+        st.markdown(f"**📅 {sel_d} の記録**")
         det = user_recs[user_recs['date'] == sel_d]
         if not det.empty:
             row = det.iloc[0]
@@ -279,7 +287,8 @@ def main():
             pts_color = "#0066cc" if pts_num > 0 else ("#cc3333" if pts_num < 0 else "#888")
             st.markdown(
                 f"<div style='background:#f8f9fa;border-radius:12px;padding:15px;'>"
-                f"<p>💰 <b>ポイント：</b><span style='color:{pts_color};font-weight:bold;font-size:18px;'>{pts}pt</span></p>"
+                f"<p>💰 <b>ポイント：</b>"
+                f"<span style='color:{pts_color};font-weight:bold;font-size:18px;'>{pts}pt</span></p>"
                 f"<p>🟢 <b>投資型：</b>{inv}</p>"
                 f"<p>🔴 <b>借金型：</b>{debt}</p>"
                 f"</div>",

@@ -12,7 +12,7 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 
 SECRET_AUTH_CODE = "feelist2026" 
 
-# デザインCSS
+# デザインCSS（これまでの指示内容を完全維持）
 st.markdown("""
     <style>
     .status-card {
@@ -25,7 +25,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. データクリーニング・ヘルパー関数 ---
+# --- 2. 高速クリーニング・ヘルパー関数 ---
 
 def make_hash(password): return hashlib.sha256(str.encode(password)).hexdigest()
 
@@ -39,8 +39,10 @@ def clean_val(x):
 def normalize_id(x):
     s = clean_val(x)
     if not s: return ""
-    try: return str(int(float(s))).zfill(4)
-    except: return s.zfill(4)
+    try:
+        return str(int(float(s))).zfill(4)
+    except:
+        return s.zfill(4)
 
 def display_format(val):
     s = clean_val(val)
@@ -129,7 +131,7 @@ def main():
         @st.fragment
         def record_ui():
             st.divider()
-            top_stars_p = st.empty()
+            top_stars_p = st.empty() # 星表示の予約席
             v = st.session_state.form_version
             col1, col2 = st.columns(2)
             with col1:
@@ -157,8 +159,11 @@ def main():
                     db['tmp'] = db['real_name'].apply(normalize_id)
                     others = db[~((db['tmp'] == current_emp_id) & (db['date'] == str(target_date)))]
                     conn.update(worksheet="Records", data=pd.concat([others, new_row]).drop(columns=['tmp']).reset_index(drop=True))
-                    st.balloons() # バルーン演出
-                    time.sleep(0.5)
+                    
+                    # --- バルーン演出：ここで2秒待機 ---
+                    st.balloons()
+                    time.sleep(2) # 2秒間風船を見せる
+                    
                     st.session_state.form_version += 1
                     st.cache_data.clear(); st.rerun()
         record_ui()
@@ -170,7 +175,8 @@ def main():
             rdf = all_recs.copy()
             rdf["points"] = pd.to_numeric(rdf["points"], errors='coerce').fillna(0)
             summary = rdf.groupby("real_name_norm")["points"].sum().reset_index()
-            summary = summary.merge(master_data[['emp_id_norm', 'nickname']].drop_duplicates(), left_on='real_name_norm', right_on='emp_id_norm', how='left')
+            master_mini = master_data[['emp_id_norm', 'nickname']].drop_duplicates()
+            summary = summary.merge(master_mini, left_on='real_name_norm', right_on='emp_id_norm', how='left')
             summary['表示名'] = summary['nickname'].apply(display_format)
             summary["順位"] = summary["points"].rank(ascending=False, method='min').astype(int)
             st.dataframe(summary.sort_values("順位")[["順位", "表示名", "points"]].rename(columns={"points":"累計"}), use_container_width=True, hide_index=True, column_config={"順位":st.column_config.NumberColumn(alignment="left"), "累計":st.column_config.NumberColumn(format="%d", alignment="left")})
@@ -202,23 +208,19 @@ def main():
             st.info(f"📅 {sel_date} の詳細\n\n🟢 投資型: {display_format(d['investment_items'])}\n\n🔴 借金型: {display_format(d['debt_items'])}")
         else: st.warning("この日の記録はありません。")
 
-    # --- 設定（パスワード変更復活） ---
+    # --- 設定 ---
     with tab4:
         st.subheader("⚙️ 設定")
         new_nick = st.text_input("ニックネーム変更", value=current_nickname)
-        
         st.markdown("---")
         st.write("🔒 パスワードの変更")
         new_pw = st.text_input("新しいパスワード", type="password")
         new_pw_conf = st.text_input("パスワード再入力", type="password")
-        
         if st.button("設定を更新する"):
             m_db = conn.read(worksheet="UserMaster", ttl="0s").astype(str)
             m_db['tmp'] = m_db['emp_id'].apply(normalize_id)
             idx = m_db[m_db['tmp'] == current_emp_id].index[0]
             m_db.at[idx, 'nickname'] = new_nick
-            
-            # パスワード入力がある場合のみ更新
             if new_pw:
                 if new_pw == new_pw_conf:
                     m_db.at[idx, 'password_hash'] = str(make_hash(new_pw))
@@ -226,7 +228,6 @@ def main():
                 else:
                     st.error("パスワードが一致しません。")
                     st.stop()
-            
             conn.update(worksheet="UserMaster", data=m_db.drop(columns=['tmp']))
             st.cache_data.clear(); st.success("ニックネームを保存しました。"); time.sleep(1); st.rerun()
 

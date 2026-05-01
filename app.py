@@ -191,148 +191,75 @@ def main():
     # --- タブ3: マイデータ ---
     with tab3:
         st.subheader("🗓 履歴の確認")
-        if 'cal_y' not in st.session_state:
-            st.session_state.cal_y = date.today().year
-            st.session_state.cal_m = date.today().month
-        if 'cal_sel_date' not in st.session_state:
-            st.session_state.cal_sel_date = today_str  # ← today_strはmain()冒頭で定義済みか確認
+        from streamlit_calendar import calendar as st_calendar
 
-        today_str = str(date.today())
-        rec_dates = set(user_recs['date'].unique().tolist()) if not user_recs.empty else set()
+        # 記録済みイベントをカレンダー形式に変換
+        events = []
+        if not user_recs.empty:
+            for _, row in user_recs.iterrows():
+                d = clean_val(row['date'])
+                pts = clean_val(row['points'])
+                if not d: continue
+                try:
+                    pts_num = int(pts)
+                except:
+                    pts_num = 0
+                color = "#0066cc" if pts_num > 0 else ("#cc3333" if pts_num < 0 else "#888")
+                events.append({
+                    "title": f"{pts_num:+d}pt",
+                    "start": d,
+                    "end": d,
+                    "backgroundColor": color,
+                    "borderColor": color,
+                    "textColor": "#ffffff",
+                    "extendedProps": {"date": d}
+                })
 
-        # 月切り替え
-        c_nav = st.columns([1, 3, 1])
-        with c_nav[0]:
-            if st.button("◀", key="prev_m", use_container_width=True):
-                st.session_state.cal_m -= 1
-                if st.session_state.cal_m == 0:
-                    st.session_state.cal_m, st.session_state.cal_y = 12, st.session_state.cal_y - 1
-                st.rerun()
-        with c_nav[1]:
-            st.markdown(
-                f"<p style='text-align:center;font-weight:bold;margin-top:5px;'>"
-                f"{st.session_state.cal_y}年 {st.session_state.cal_m}月</p>",
-                unsafe_allow_html=True
-            )
-        with c_nav[2]:
-            if st.button("▶", key="next_m", use_container_width=True):
-                st.session_state.cal_m += 1
-                if st.session_state.cal_m == 13:
-                    st.session_state.cal_m, st.session_state.cal_y = 1, st.session_state.cal_y + 1
-                st.rerun()
+        calendar_options = {
+            "initialView": "dayGridMonth",
+            "locale": "ja",
+            "headerToolbar": {
+                "left": "prev",
+                "center": "title",
+                "right": "next"
+            },
+            "selectable": True,
+            "height": 400,
+            "buttonText": {"today": "今日"},
+            "dayCellClassNames": "",
+            "dayMaxEvents": True,
+        }
 
-        # ★ 隠しテキスト入力で日付を受け取る
-        # JavaScriptがこの入力欄の値を書き換え→Enterを発火→Streamlitが検知
-        hidden_date = st.text_input(
-            "selected_date",
-            value=st.session_state.cal_sel_date,
-            key="hidden_cal_input",
-            label_visibility="collapsed"
+        custom_css = """
+        .fc-event { cursor: pointer; font-size: 11px; }
+        .fc-daygrid-day { cursor: pointer; }
+        .fc-col-header-cell-cushion { font-size: 12px; }
+        .fc-daygrid-day-number { font-size: 12px; }
+        """
+
+        result = st_calendar(
+            events=events,
+            options=calendar_options,
+            custom_css=custom_css,
+            key="main_calendar"
         )
-        # 値が変わっていたら更新
-        if hidden_date and hidden_date != st.session_state.cal_sel_date and len(hidden_date) == 10:
-            st.session_state.cal_sel_date = hidden_date
-            st.rerun()
 
-        # カレンダーHTML（ボタンクリック→隠し入力に値セット→Enterキー発火）
-        cal = calendar.monthcalendar(st.session_state.cal_y, st.session_state.cal_m)
-        sel_d = st.session_state.cal_sel_date
-        cal_rows = ""
-        for week in cal:
-            cal_rows += "<tr>"
-            for i, day in enumerate(week):
-                if day == 0:
-                    cal_rows += "<td></td>"
-                else:
-                    d_str = f"{st.session_state.cal_y}-{st.session_state.cal_m:02d}-{day:02d}"
-                    cls = "day"
-                    if i == 5: cls += " sat"
-                    if i == 6: cls += " sun"
-                    if d_str == today_str: cls += " today"
-                    if d_str in rec_dates: cls += " rec"
-                    if d_str == sel_d: cls += " sel"
-                    dot = "<span class='dot'>●</span>" if d_str in rec_dates else "<span class='dot'>&nbsp;</span>"
-                    cal_rows += (
-                        f'<td><button class="{cls}" '
-                        f'onclick="pickDate(\'{d_str}\')">'
-                        f'{day}{dot}</button></td>'
-                    )
-            cal_rows += "</tr>"
+        # クリックイベントを受け取る
+        clicked_date = None
+        if result:
+            # 日付セルのクリック
+            if result.get("dateClick"):
+                clicked_date = result["dateClick"].get("date", "")[:10]
+            # イベント（ポイント表示）のクリック
+            elif result.get("eventClick"):
+                clicked_date = result["eventClick"]["event"].get("start", "")[:10]
 
-        cal_html = f"""
-<style>
-* {{ box-sizing: border-box; margin: 0; padding: 0; }}
-body {{ background: transparent; font-family: sans-serif; }}
-table {{ width: 100%; border-collapse: collapse; table-layout: fixed; }}
-th {{ font-size: 11px; color: #999; font-weight: bold; padding: 6px 0; text-align: center; }}
-th.sat {{ color: #2196F3; }}
-th.sun {{ color: #E53935; }}
-td {{ padding: 2px; text-align: center; }}
-button.day {{
-    width: 100%;
-    aspect-ratio: 1 / 1;
-    max-width: 42px;
-    border: none;
-    border-radius: 50%;
-    background: transparent;
-    font-size: 12px;
-    cursor: pointer;
-    display: inline-flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 1px;
-    padding: 0;
-    color: #333;
-    -webkit-tap-highlight-color: rgba(0,0,0,0.1);
-}}
-button.day.sat {{ color: #2196F3; }}
-button.day.sun {{ color: #E53935; }}
-button.day.today {{ border: 2px solid #0066cc; }}
-button.day.rec {{ background: #ddeeff; color: #0044aa; font-weight: bold; }}
-button.day.sel {{ background: #0066cc !important; color: white !important; border: none !important; }}
-button.day.sel .dot {{ color: white; }}
-.dot {{ font-size: 6px; line-height: 1; color: #2196F3; display: block; min-height: 7px; }}
-</style>
-
-<table>
-  <tr>
-    <th>月</th><th>火</th><th>水</th><th>木</th><th>金</th>
-    <th class="sat">土</th><th class="sun">日</th>
-  </tr>
-  {cal_rows}
-</table>
-
-<script>
-function pickDate(d) {{
-  // Streamlitのtext_inputを探してEnterを発火
-  var inputs = window.parent.document.querySelectorAll('input[type="text"]');
-  var target = null;
-  for (var i = 0; i < inputs.length; i++) {{
-    // label_visibility="collapsed"のinputを特定
-    if (inputs[i].value.length === 10 || inputs[i].value === '') {{
-      target = inputs[i];
-    }}
-  }}
-  if (target) {{
-    var nativeInputValueSetter = Object.getOwnPropertyDescriptor(
-      window.parent.HTMLInputElement.prototype, 'value'
-    ).set;
-    nativeInputValueSetter.call(target, d);
-    target.dispatchEvent(new Event('input', {{ bubbles: true }}));
-    // Enterキーを発火してStreamlitに送信
-    target.dispatchEvent(new KeyboardEvent('keydown', {{
-      key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true
-    }}));
-  }}
-}}
-</script>
-"""
-        components.html(cal_html, height=260, scrolling=False)
+        if clicked_date:
+            st.session_state.cal_sel_date = clicked_date
 
         # 詳細表示
         st.divider()
-        sel_d = st.session_state.cal_sel_date
+        sel_d = st.session_state.get("cal_sel_date", str(date.today()))
         st.markdown(f"**📅 {sel_d} の記録**")
 
         det = user_recs[user_recs['date'] == sel_d]

@@ -46,7 +46,7 @@ st.markdown("""
         font-weight: bold;
     }
     .col-date { width: 100px; }
-    .col-pts { width: 70px; text-align: right !important; }
+    .col-pts { width: 80px; text-align: right !important; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -62,11 +62,15 @@ def clean_val_for_display(x):
     return s
 
 def normalize_id(x):
+    """ IDを4桁のきれいな文字列にする（.0を徹底排除） """
     s = str(x).strip()
     if s.endswith('.0'): s = s[:-2]
     if not s or s.lower() in ["nan", "none"]: return ""
-    try: return str(int(float(s))).zfill(4)
-    except: return s.zfill(4)
+    try:
+        # 一度数値にしてから再度整数として文字列化することで.0を消す
+        return str(int(float(s))).zfill(4)
+    except:
+        return s.zfill(4)
 
 @st.cache_data(ttl=60)
 def load_data_cached(sheet_name):
@@ -82,6 +86,7 @@ def load_data_cached(sheet_name):
     except Exception:
         return pd.DataFrame()
 
+# 項目定義
 INVESTMENT_ITEMS = ["料理", "掃除", "睡眠が8時間以上", "湯舟に入浴、サウナ", "朝10分前に出社", "身体を動かした", "健康的な食生活", "洗濯", "ニュースをみる", "学習", "読書", "創作", "音楽", "挨拶", "感謝", "家族との時間", "植物", "ペット", "新しい挑戦"]
 DEBT_ITEMS = ["外食オンリー", "掃除なし", "睡眠不足", "シャワーのみ", "朝ギリギリ", "1日ゴロゴロ", "ギルティ食", "アルコール", "タバコ", "スマホ2h以上", "映像2h以上", "SNS2h以上", "ゲーム2h以上", "ソシャゲ起動", "ゲーム課金", "ギャンブル", "無駄な出費", "独り言", "倫理欠如"]
 
@@ -111,25 +116,32 @@ def main():
                         if not stored_hash:
                             with st.form("init_reg"):
                                 st.info("初回登録：パスワードを設定してください（４文字以上）")
-                                ac, np, npc = st.text_input("合言葉", type="password"), st.text_input("PW", type="password"), st.text_input("確認", type="password")
-                                if st.form_submit_button("登録"):
-                                    if ac == SECRET_AUTH_CODE and np == npc and len(np) >= 4:
+                                reg_msg = st.empty()
+                                ac, np, npc = st.text_input("秘密の合言葉", type="password"), st.text_input("PW", type="password"), st.text_input("確認", type="password")
+                                if st.form_submit_button("登録してログイン"):
+                                    if ac != SECRET_AUTH_CODE: reg_msg.error("秘密の合言葉が違います")
+                                    elif len(np) < 4: reg_msg.error("パスワードは４文字以上")
+                                    elif np != npc: reg_msg.error("不一致")
+                                    else:
+                                        reg_msg.empty()
                                         cm = conn.read(worksheet="UserMaster", ttl="0s").astype(str)
-                                        cm['tmp'] = cm['emp_id'].apply(normalize_id)
-                                        idx = cm[cm['tmp'] == tid_norm].index[0]
+                                        # DB書き込み前にIDから.0を排除して4桁固定にする
+                                        cm['emp_id'] = cm['emp_id'].apply(normalize_id)
+                                        idx = cm[cm['emp_id'] == tid_norm].index[0]
                                         cm.at[idx, 'password_hash'], cm.at[idx, 'nickname'] = str(make_hash(np)), tid_norm
-                                        conn.update(worksheet="UserMaster", data=cm.drop(columns=['tmp']))
+                                        conn.update(worksheet="UserMaster", data=cm)
                                         st.session_state.update({"authenticated":True, "current_user":tid_norm})
                                         st.cache_data.clear(); st.rerun()
-                                    else: st.error("入力内容を確認してください")
                         else:
                             with st.form("login_f"):
+                                login_msg = st.empty()
                                 ip = st.text_input("パスワード", type="password")
                                 if st.form_submit_button("ログイン"):
                                     if make_hash(ip) == stored_hash:
+                                        login_msg.empty()
                                         st.session_state.update({"authenticated":True, "current_user":tid_norm})
                                         st.cache_data.clear(); st.rerun()
-                                    else: st.error("パスワードが違います")
+                                    else: login_msg.error("パスワードが違います")
         st.stop()
 
     current_emp_id = st.session_state.current_user
@@ -181,14 +193,15 @@ def main():
             if st.button("登録する", type="primary", use_container_width=True):
                 with st.spinner("保存中..."):
                     db = conn.read(worksheet="Records", ttl="0s").astype(str)
+                    # 書き込み前に社員番号をきれいにする
+                    db['real_name'] = db['real_name'].apply(normalize_id)
                     new_row = pd.DataFrame([{"real_name": current_emp_id, "date": str(target_date), "points": str(n_inv - n_debt), "entry_date": str(datetime.now()), "investment_items": ", ".join(sel_inv), "debt_items": ", ".join(sel_debt)}])
-                    db['tmp'] = db['real_name'].apply(normalize_id)
-                    others = db[~((db['tmp'] == current_emp_id) & (db['date'] == str(target_date)))]
-                    conn.update(worksheet="Records", data=pd.concat([others, new_row]).drop(columns=['tmp']).reset_index(drop=True))
+                    others = db[~((db['real_name'] == current_emp_id) & (db['date'] == str(target_date)))]
+                    conn.update(worksheet="Records", data=pd.concat([others, new_row]).reset_index(drop=True))
                     st.balloons(); time.sleep(2); st.session_state.form_version += 1; st.cache_data.clear(); st.rerun()
         record_ui()
 
-    # --- タブ2: ランキング ---
+    # --- タブ2: ランキング（pt表示追加） ---
     with tab2:
         st.subheader("🏆 累計ポイントランキング")
         if not all_recs.empty:
@@ -198,9 +211,19 @@ def main():
             summary = summary.merge(mini, left_on='real_name_norm', right_on='emp_id_norm', how='left')
             summary['ニックネーム'] = summary['nickname'].apply(lambda x: x if pd.notna(x) and str(x).lower() not in ["nan", "none", ""] else "－")
             summary["順位"] = summary["points"].rank(ascending=False, method='min').astype(int)
-            st.dataframe(summary.sort_values("順位")[["順位", "ニックネーム", "points"]].rename(columns={"points":"累計"}), use_container_width=True, hide_index=True)
+            summary = summary.rename(columns={"points": "累計"})
+            # ポイント数に pt を付ける設定
+            st.dataframe(
+                summary.sort_values("順位")[["順位", "ニックネーム", "累計"]],
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "順位": st.column_config.NumberColumn(alignment="left"),
+                    "累計": st.column_config.NumberColumn(format="%d pt", alignment="left")
+                }
+            )
 
-    # --- タブ3: マイデータ（HTMLテーブル版） ---
+    # --- タブ3: マイデータ（HTMLテーブル・自動折り返し） ---
     with tab3:
         st.subheader("📋 全履歴の一覧")
         if not user_recs.empty:
@@ -225,13 +248,17 @@ def main():
         st.write("🔒 パスワードの変更")
         new_pw, new_pw_c = st.text_input("新PW", type="password"), st.text_input("確認", type="password")
         if st.button("設定を更新する"):
-            m_db = conn.read(worksheet="UserMaster", ttl="0s").astype(str); m_db['tmp'] = m_db['emp_id'].apply(normalize_id)
-            idx = m_db[m_db['tmp'] == current_emp_id].index[0]; m_db.at[idx, 'nickname'] = new_nick
+            m_db = conn.read(worksheet="UserMaster", ttl="0s").astype(str)
+            # 書き込み前に全ての社員番号から.0を排除
+            m_db['emp_id'] = m_db['emp_id'].apply(normalize_id)
+            idx = m_db[m_db['emp_id'] == current_emp_id].index[0]
+            m_db.at[idx, 'nickname'] = new_nick
             if new_pw:
                 if len(new_pw) < 4: st.error("4文字以上必要です"); st.stop()
                 if new_pw == new_pw_c: m_db.at[idx, 'password_hash'] = str(make_hash(new_pw))
-                else: st.error("一致しません"); st.stop()
-            conn.update(worksheet="UserMaster", data=m_db.drop(columns=['tmp'])); st.cache_data.clear(); st.success("保存しました"); time.sleep(1); st.rerun()
+                else: st.error("不一致です"); st.stop()
+            conn.update(worksheet="UserMaster", data=m_db)
+            st.cache_data.clear(); st.success("保存しました"); time.sleep(1); st.rerun()
 
 if __name__ == "__main__":
     main()

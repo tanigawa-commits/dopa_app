@@ -9,7 +9,7 @@ import time
 st.set_page_config(page_title="Dopamine Tracker", layout="wide")
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-SECRET_AUTH_CODE = "2026" 
+SECRET_AUTH_CODE = "feelist2026" 
 
 # デザインCSS
 st.markdown("""

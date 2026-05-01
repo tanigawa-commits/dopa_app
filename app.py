@@ -6,13 +6,13 @@ import hashlib
 import time
 import calendar
 
-# --- 1. アプリ設定（PC/スマホ両対応のためwideを採用） ---
+# --- 1. アプリ設定（安定稼働のためwideを採用） ---
 st.set_page_config(page_title="Dopamine Tracker", layout="wide")
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 SECRET_AUTH_CODE = "feelist2026" 
 
-# デザインCSS（他の画面に干渉しないようクラス名を限定）
+# デザインCSS（特定のパーツのみに適用し、全体を壊さない設定）
 st.markdown("""
     <style>
     .status-card {
@@ -22,13 +22,10 @@ st.markdown("""
     .star-display { font-size: 26px; letter-spacing: 2px; margin: 5px 0; font-family: monospace; }
     .status-label { font-size: 16px; font-weight: bold; margin-bottom: 5px; }
     .status-count { font-size: 14px; color: #5e6064; }
-    
-    /* ランキング表の文字サイズ調整 */
-    [data-testid="stDataFrame"] td { font-size: 14px !important; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. 徹底的なデータクリーニング関数 ---
+# --- 2. データクリーニング・ヘルパー関数 ---
 
 def make_hash(password): return hashlib.sha256(str.encode(password)).hexdigest()
 
@@ -46,11 +43,10 @@ def display_format(val):
     return s if s != "" else "－"
 
 def normalize_id(x):
-    """IDを4桁0埋めにする"""
+    """IDを4桁0埋めにする（確実に.0を消すためfloat経由）"""
     s = clean_val(x)
     if s == "": return ""
     try:
-        # float経由でintに変換することで確実に.0を消す
         return str(int(float(s))).zfill(4)
     except:
         return s.zfill(4)
@@ -63,7 +59,7 @@ def load_data_cached(sheet_name):
         return df.astype(str)
     except: return pd.DataFrame()
 
-# 項目
+# 項目定義
 INVESTMENT_ITEMS = ["料理", "掃除", "睡眠が8時間以上", "湯舟に入浴、サウナ", "朝10分前に出社", "身体を動かした", "健康的な食生活", "洗濯", "ニュースをみる", "学習", "読書", "創作", "音楽", "挨拶", "感謝", "家族との時間", "植物", "ペット", "新しい挑戦"]
 DEBT_ITEMS = ["外食オンリー", "掃除なし", "睡眠不足", "シャワーのみ", "朝ギリギリ", "1日ゴロゴロ", "ギルティ食", "アルコール", "タバコ", "スマホ2h以上", "映像2h以上", "SNS2h以上", "ゲーム2h以上", "ソシャゲ起動", "ゲーム課金", "ギャンブル", "無駄な出費", "独り言", "倫理欠如"]
 
@@ -73,7 +69,7 @@ def main():
     if 'last_logged_id' not in st.session_state: st.session_state.last_logged_id = ""
     if 'form_version' not in st.session_state: st.session_state.form_version = 0
 
-    # 認証
+    # --- A. 認証セクション ---
     if not st.session_state.authenticated:
         st.title("🔒 Dopamine Tracker - 認証")
         target_id = st.text_input("社員番号(4桁)", value=st.session_state.last_logged_id, max_chars=4)
@@ -108,7 +104,7 @@ def main():
                             else: st.error("パスワードが違います")
         st.stop()
 
-    # データ準備
+    # --- B. アプリ本体（認証後） ---
     current_emp_id = st.session_state.current_user
     master_data = load_data_cached("UserMaster")
     user_info = master_data[master_data['emp_id'].apply(normalize_id) == current_emp_id].iloc[0]
@@ -117,7 +113,6 @@ def main():
     all_recs = load_data_cached("Records")
     user_recs = all_recs[all_recs['real_name'].apply(normalize_id) == current_emp_id] if not all_recs.empty else pd.DataFrame()
 
-    # --- ヘッダー・タイトル ---
     st.title("📊 Dopamine Tracker")
     with st.sidebar:
         st.write(f"ログイン: **{current_nickname}**")
@@ -127,11 +122,11 @@ def main():
 
     tab1, tab2, tab3, tab4 = st.tabs(["今日の記録", "ランキング", "マイデータ", "設定"])
 
-    # --- タブ1: 今日の記録（完全復活版） ---
+    # --- タブ1: 今日の記録 ---
     with tab1:
         total_pts = pd.to_numeric(user_recs['points'], errors='coerce').fillna(0).sum()
-        # 【復活】指定の文言
-        st.write(f"### {current_nickname}さんのこれまでのポイントは {total_pts:g} です")
+        # 【修正】指定の文言に変更
+        st.write(f"### {current_nickname}さんの累計ポイントは {total_pts:g} ptです")
         
         # 【復活】指定のラベル
         target_date = st.date_input("対象日（７日前まで遡って登録、修正が出来ます）", value=date.today(), min_value=date.today()-timedelta(days=7), max_value=date.today())
@@ -167,7 +162,7 @@ def main():
                     st.cache_data.clear(); st.balloons(); st.rerun()
         record_ui()
 
-    # --- タブ2: ランキング（左寄せ・整数・None排除） ---
+    # --- タブ2: ランキング ---
     with tab2:
         st.subheader("🏆 累計ポイントランキング")
         if not all_recs.empty:
@@ -184,7 +179,7 @@ def main():
                              "累計": st.column_config.NumberColumn(format="%d", alignment="left")
                          })
 
-    # --- タブ3: マイデータ（安定重視のカレンダー） ---
+    # --- タブ3: マイデータ ---
     with tab3:
         st.subheader("🗓 履歴の確認")
         sel_date = st.date_input("確認したい日を選択してください", value=date.today())

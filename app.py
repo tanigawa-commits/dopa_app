@@ -212,68 +212,98 @@ def main():
                     st.session_state.cal_m, st.session_state.cal_y = 1, st.session_state.cal_y + 1
                 st.rerun()
 
-        # 記録済み日付セット
         rec_dates = set(user_recs['date'].unique().tolist()) if not user_recs.empty else set()
         today_str = str(date.today())
         sel_d = st.session_state.get("cal_sel_date", today_str)
 
-        # 曜日ヘッダー（HTMLで描画、ボタン行と幅を合わせる）
-        st.markdown("""
-        <div style="display:grid; grid-template-columns:repeat(7,1fr); text-align:center;
-                    font-size:11px; font-weight:bold; color:#999; padding:4px 0 2px 0;
-                    gap:2px;">
-            <div>月</div><div>火</div><div>水</div><div>木</div>
-            <div>金</div><div style="color:#2196F3">土</div><div style="color:#F44336">日</div>
-        </div>
-        """, unsafe_allow_html=True)
-
-        # カレンダーボタン描画
+        # カレンダーHTML生成
         cal = calendar.monthcalendar(st.session_state.cal_y, st.session_state.cal_m)
+        cal_rows = ""
         for week in cal:
-            cols = st.columns(7)
+            cal_rows += "<tr>"
             for i, day in enumerate(week):
-                with cols[i]:
-                    if day == 0:
-                        # 空白セル（見えないボタン）
-                        st.markdown("<div style='height:44px'></div>", unsafe_allow_html=True)
-                    else:
-                        d_str = f"{st.session_state.cal_y}-{st.session_state.cal_m:02d}-{day:02d}"
-                        is_rec = d_str in rec_dates
-                        is_today = d_str == today_str
-                        is_sel = d_str == sel_d
+                if day == 0:
+                    cal_rows += "<td></td>"
+                else:
+                    d_str = f"{st.session_state.cal_y}-{st.session_state.cal_m:02d}-{day:02d}"
+                    cls = "day"
+                    if i == 5: cls += " sat"
+                    if i == 6: cls += " sun"
+                    if d_str == today_str: cls += " today"
+                    if d_str in rec_dates: cls += " rec"
+                    if d_str == sel_d: cls += " sel"
+                    dot = "<span class='dot'>●</span>" if d_str in rec_dates else "<span class='dot'></span>"
+                    cal_rows += f'<td><button class="{cls}" onclick="pick(\'{d_str}\')">{day}{dot}</button></td>'
+            cal_rows += "</tr>"
 
-                        # ラベル組み立て
-                        dot = "🔵" if is_rec else ""
-                        label = f"{day}\n{dot}" if dot else str(day)
+        html_code = f"""
+<style>
+*{{box-sizing:border-box;margin:0;padding:0;}}
+body{{background:transparent;font-family:sans-serif;}}
+table{{width:100%;border-collapse:collapse;table-layout:fixed;}}
+th{{font-size:11px;color:#999;font-weight:bold;padding:6px 0;text-align:center;}}
+td{{padding:2px;text-align:center;}}
+.sat{{color:#2196F3!important;}}
+.sun{{color:#E53935!important;}}
+button.day{{
+  width:100%;aspect-ratio:1;max-width:44px;
+  border:none;border-radius:50%;background:transparent;
+  font-size:12px;cursor:pointer;display:flex;
+  flex-direction:column;align-items:center;justify-content:center;
+  gap:1px;padding:0;color:#333;
+}}
+button.day:active{{opacity:0.7;}}
+button.day.today{{border:2px solid #0066cc;}}
+button.day.rec{{background:#ddeeff;color:#0044aa;font-weight:bold;}}
+button.day.sel{{background:#0066cc!important;color:#fff!important;border:none!important;}}
+.dot{{font-size:6px;line-height:1;color:#2196F3;min-height:7px;}}
+button.day.sel .dot{{color:#fff;}}
+th.sat{{color:#2196F3;}} th.sun{{color:#E53935;}}
+</style>
+<table>
+<tr>
+  <th>月</th><th>火</th><th>水</th><th>木</th><th>金</th>
+  <th class="sat">土</th><th class="sun">日</th>
+</tr>
+{cal_rows}
+</table>
+<input type="text" id="out" style="position:absolute;left:-9999px;top:-9999px;" />
+<script>
+function pick(d){{
+  var el=document.getElementById('out');
+  el.value=d;
+  el.dispatchEvent(new Event('input',{{bubbles:true}}));
+  // Streamlit の親フレームへ送信
+  window.parent.postMessage({{isStreamlitMessage:true,type:'streamlit:setComponentValue',value:d}},'*');
+}}
+</script>
+"""
 
-                        # ボタンを押したらsession_state更新
-                        if st.button(label, key=f"cal_{d_str}", use_container_width=True):
-                            st.session_state.cal_sel_date = d_str
+        clicked = components.html(html_code, height=260, scrolling=False)
+
+        # ★ clicked の値を使う（Noneでなければ更新）
+        if clicked is not None and str(clicked) != sel_d:
+            st.session_state.cal_sel_date = str(clicked)
+            st.rerun()
+
+        # ★ 補助：手動選択ボタン（HTMLクリックが効かない環境向け保険）
+        # 記録のある日付だけボタンで選べるようにする
+        if not user_recs.empty:
+            month_recs = sorted([
+                d for d in rec_dates
+                if d.startswith(f"{st.session_state.cal_y}-{st.session_state.cal_m:02d}")
+            ])
+            if month_recs:
+                st.caption("▼ 記録のある日付をタップしても選択できます")
+                btn_cols = st.columns(len(month_recs))
+                for idx, d in enumerate(month_recs):
+                    day_num = int(d.split("-")[2])
+                    with btn_cols[idx]:
+                        if st.button(str(day_num), key=f"qb_{d}"):
+                            st.session_state.cal_sel_date = d
                             st.rerun()
 
-                        # 選択・今日・記録のスタイルをボタンに上書き
-                        btn_key = f"cal_{d_str}"
-                        if is_sel:
-                            bg, color, border = "#0066cc", "white", "none"
-                        elif is_rec:
-                            bg, color, border = "#ddeeff", "#0044aa", "1px solid #aaccee"
-                        elif is_today:
-                            bg, color, border = "white", "#0066cc", "2px solid #0066cc"
-                        else:
-                            bg, color, border = "white", "#333", "1px solid #ddd"
-
-                        st.markdown(f"""
-                        <style>
-                        div[data-testid="stHorizontalBlock"] button[key="{btn_key}"],
-                        button[data-testid="baseButton-secondary"][kind="secondary"]:has(+ * [data-key="{btn_key}"]) {{
-                            background-color: {bg} !important;
-                            color: {color} !important;
-                            border: {border} !important;
-                        }}
-                        </style>
-                        """, unsafe_allow_html=True)
-
-        # 詳細表示エリア
+        # 詳細表示
         st.divider()
         st.markdown(f"**📅 {sel_d} の記録**")
         det = user_recs[user_recs['date'] == sel_d]

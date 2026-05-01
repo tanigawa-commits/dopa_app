@@ -12,7 +12,7 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 
 SECRET_AUTH_CODE = "feelist2026" 
 
-# デザインCSS（他のパーツを壊さないよう、クラス名を限定）
+# デザインCSS（他画面に干渉しないようクラスを限定）
 st.markdown("""
     <style>
     .status-card {
@@ -21,15 +21,14 @@ st.markdown("""
     }
     .star-display { font-size: 26px; letter-spacing: 2px; margin: 5px 0; font-family: monospace; }
     .status-label { font-size: 16px; font-weight: bold; margin-bottom: 5px; }
-    .status-count { font-size: 14px; color: #5e6064; }
+    .status-count { font-size: 14px; color: #5e6064; height: 20px; } /* テキスト用の高さを確保 */
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. データクリーニング ---
+# --- 2. データクリーニング・ヘルパー関数 ---
 def make_hash(password): return hashlib.sha256(str.encode(password)).hexdigest()
 
 def clean_val(x):
-    """ .0, None, nanを完全に消去する """
     if pd.isna(x): return ""
     s = str(x).strip()
     if s.endswith('.0'): s = s[:-2]
@@ -37,12 +36,10 @@ def clean_val(x):
     return s
 
 def display_format(val):
-    """ 表示時に空なら全角ハイフンにする """
     s = clean_val(val)
     return s if s != "" else "－"
 
 def normalize_id(x):
-    """ IDを4桁0埋めにする """
     s = clean_val(x)
     if s == "": return ""
     try: return str(int(float(s))).zfill(4)
@@ -52,8 +49,7 @@ def normalize_id(x):
 def load_data_cached(sheet_name):
     try:
         df = conn.read(worksheet=sheet_name, ttl="1m")
-        if df.empty: return pd.DataFrame()
-        return df.astype(str)
+        return df.astype(str) if not df.empty else pd.DataFrame()
     except: return pd.DataFrame()
 
 # 項目定義
@@ -66,9 +62,9 @@ def main():
     if 'last_logged_id' not in st.session_state: st.session_state.last_logged_id = ""
     if 'form_version' not in st.session_state: st.session_state.form_version = 0
 
-    # 認証
+    # 認証セクション
     if not st.session_state.authenticated:
-        st.title("📊 Dopamine Tracker - 認証")
+        st.title("🔒 Dopamine Tracker - 認証")
         target_id = st.text_input("社員番号(4桁)", value=st.session_state.last_logged_id, max_chars=4)
         if target_id:
             master = load_data_cached("UserMaster")
@@ -96,15 +92,14 @@ def main():
                                 st.cache_data.clear(); st.rerun()
         st.stop()
 
+    # データ準備
     current_emp_id = st.session_state.current_user
     master_data = load_data_cached("UserMaster")
     user_info = master_data[master_data['emp_id'].apply(normalize_id) == current_emp_id].iloc[0]
     current_nickname = clean_val(user_info['nickname']) if clean_val(user_info['nickname']) != "" else current_emp_id
-    
     all_recs = load_data_cached("Records")
     user_recs = all_recs[all_recs['real_name'].apply(normalize_id) == current_emp_id] if not all_recs.empty else pd.DataFrame()
 
-    # --- メイン画面 ---
     st.title("📊 Dopamine Tracker")
     with st.sidebar:
         st.write(f"ログイン: **{current_nickname}**")
@@ -114,19 +109,17 @@ def main():
 
     tab1, tab2, tab3, tab4 = st.tabs(["今日の記録", "ランキング", "マイデータ", "設定"])
 
-    # --- タブ1: 今日の記録（完全復元） ---
+    # --- タブ1: 今日の記録 ---
     with tab1:
         total_pts = pd.to_numeric(user_recs['points'], errors='coerce').fillna(0).sum()
-        # 【復元】累計ポイント表示
         st.write(f"### {current_nickname}さんの累計ポイントは {total_pts:g} ptです")
         
-        # 【復元】日付選択ラベル
         target_date = st.date_input("対象日（７日前まで遡って登録、修正が出来ます）", value=date.today(), min_value=date.today()-timedelta(days=7), max_value=date.today())
 
         @st.fragment
         def record_ui():
             st.divider()
-            # ☆表示用のプレースホルダー（チェックボックスの上に表示するため）
+            # 【重要】星表示をチェックボックスの上に置くためのプレースホルダー
             top_stars_p = st.empty()
             
             v = st.session_state.form_version
@@ -138,15 +131,15 @@ def main():
                 st.markdown("#### 🔴 借金型")
                 sel_debt = [i for i in DEBT_ITEMS if st.checkbox(i, key=f"debt_{i}_{v}")]
             
-            # ロジック計算
+            # 星表示ロジック
             n_inv, n_debt = len(sel_inv), len(sel_debt)
             inv_s, debt_s = "★" * min(n_inv, 10) + "☆" * max(0, 10 - n_inv), "★" * min(n_debt, 10) + "☆" * max(0, 10 - n_debt)
             
-            # テキスト表示ロジック（0個なら非表示、11個以上なら固定文言）
+            # 【重要】個数表示ロジック（0個なら非表示、11個以上なら「10個以上」）
             inv_txt = f"{n_inv}個実施！" if 0 < n_inv <= 10 else ("10個以上実施！" if n_inv > 10 else "")
             debt_txt = f"{n_debt}個実施！" if 0 < n_debt <= 10 else ("10個以上実施！" if n_debt > 10 else "")
 
-            # 星カードをプレースホルダーへ流し込み
+            # プレースホルダーに星カードを流し込み
             with top_stars_p.container():
                 sc1, sc2 = st.columns(2)
                 with sc1: st.markdown(f'<div class="status-card"><div class="status-label" style="color:#0066cc;">投資型</div><div class="star-display" style="color:#00cc99;">{inv_s}</div><div class="status-count">{inv_txt}</div></div>', unsafe_allow_html=True)
@@ -154,15 +147,16 @@ def main():
             
             st.metric("本日のポイント", f"{n_inv - n_debt:+d}")
             if st.button("登録する", type="primary", use_container_width=True):
-                db = conn.read(worksheet="Records", ttl="0s").astype(str)
-                new_row = pd.DataFrame([{"real_name": current_emp_id, "date": str(target_date), "points": str(n_inv - n_debt), "entry_date": str(datetime.now()), "investment_items": ", ".join(sel_inv), "debt_items": ", ".join(sel_debt)}])
-                others = db[~((db['real_name'].apply(normalize_id) == current_emp_id) & (db['date'] == str(target_date)))]
-                conn.update(worksheet="Records", data=pd.concat([others, new_row]).reset_index(drop=True))
-                st.session_state.form_version += 1
-                st.cache_data.clear(); st.balloons(); st.rerun()
+                with st.spinner("登録中..."):
+                    db = conn.read(worksheet="Records", ttl="0s").astype(str)
+                    new_row = pd.DataFrame([{"real_name": current_emp_id, "date": str(target_date), "points": str(n_inv - n_debt), "entry_date": str(datetime.now()), "investment_items": ", ".join(sel_inv), "debt_items": ", ".join(sel_debt)}])
+                    others = db[~((db['real_name'].apply(normalize_id) == current_emp_id) & (db['date'] == str(target_date)))]
+                    conn.update(worksheet="Records", data=pd.concat([others, new_row]).reset_index(drop=True))
+                    st.session_state.form_version += 1
+                    st.cache_data.clear(); st.balloons(); st.rerun()
         record_ui()
 
-    # --- タブ2: ランキング（干渉しないようシンプルに維持） ---
+    # --- タブ2: ランキング ---
     with tab2:
         st.subheader("🏆 累計ポイントランキング")
         if not all_recs.empty:
@@ -176,7 +170,7 @@ def main():
                          use_container_width=True, hide_index=True,
                          column_config={"順位": st.column_config.NumberColumn(alignment="left"), "累計": st.column_config.NumberColumn(format="%d", alignment="left")})
 
-    # --- タブ3: マイデータ（安定のカレンダー方式） ---
+    # --- タブ3: マイデータ ---
     with tab3:
         st.subheader("🗓 履歴の確認")
         sel_date = st.date_input("確認したい日を選択してください", value=date.today())
@@ -184,8 +178,7 @@ def main():
         cal = calendar.monthcalendar(year, month)
         recorded_dates = user_recs['date'].unique().tolist() if not user_recs.empty else []
         st.write(f"▼ {month}月の記録状況 (🔵=記録あり)")
-        map_html = "<table style='width:100%; text-align:center; border-collapse:collapse; font-size:14px;'>"
-        map_html += "<tr style='color:#666;'><td>月</td><td>火</td><td>水</td><td>木</td><td>金</td><td>土</td><td>日</td></tr>"
+        map_html = "<table style='width:100%; text-align:center; border-collapse:collapse; font-size:14px;'><tr><td>月</td><td>火</td><td>水</td><td>木</td><td>金</td><td>土</td><td>日</td></tr>"
         for week in cal:
             map_html += "<tr>"
             for day in week:
@@ -206,7 +199,6 @@ def main():
 
     # --- タブ4: 設定 ---
     with tab4:
-        st.subheader("⚙️ 設定")
         new_nick = st.text_input("ニックネーム変更", value=current_nickname)
         if st.button("保存"):
             m_db = conn.read(worksheet="UserMaster", ttl="0s").astype(str)

@@ -194,8 +194,13 @@ def main():
         if 'cal_y' not in st.session_state:
             st.session_state.cal_y = date.today().year
             st.session_state.cal_m = date.today().month
+        if 'cal_sel_date' not in st.session_state:
+            st.session_state.cal_sel_date = today_str  # ← today_strはmain()冒頭で定義済みか確認
 
-        # 月切り替えナビ
+        today_str = str(date.today())
+        rec_dates = set(user_recs['date'].unique().tolist()) if not user_recs.empty else set()
+
+        # 月切り替え
         c_nav = st.columns([1, 3, 1])
         with c_nav[0]:
             if st.button("◀", key="prev_m", use_container_width=True):
@@ -204,7 +209,11 @@ def main():
                     st.session_state.cal_m, st.session_state.cal_y = 12, st.session_state.cal_y - 1
                 st.rerun()
         with c_nav[1]:
-            st.markdown(f"<p style='text-align:center;font-weight:bold;margin-top:5px;'>{st.session_state.cal_y}年 {st.session_state.cal_m}月</p>", unsafe_allow_html=True)
+            st.markdown(
+                f"<p style='text-align:center;font-weight:bold;margin-top:5px;'>"
+                f"{st.session_state.cal_y}年 {st.session_state.cal_m}月</p>",
+                unsafe_allow_html=True
+            )
         with c_nav[2]:
             if st.button("▶", key="next_m", use_container_width=True):
                 st.session_state.cal_m += 1
@@ -212,12 +221,22 @@ def main():
                     st.session_state.cal_m, st.session_state.cal_y = 1, st.session_state.cal_y + 1
                 st.rerun()
 
-        rec_dates = set(user_recs['date'].unique().tolist()) if not user_recs.empty else set()
-        today_str = str(date.today())
-        sel_d = st.session_state.get("cal_sel_date", today_str)
+        # ★ 隠しテキスト入力で日付を受け取る
+        # JavaScriptがこの入力欄の値を書き換え→Enterを発火→Streamlitが検知
+        hidden_date = st.text_input(
+            "selected_date",
+            value=st.session_state.cal_sel_date,
+            key="hidden_cal_input",
+            label_visibility="collapsed"
+        )
+        # 値が変わっていたら更新
+        if hidden_date and hidden_date != st.session_state.cal_sel_date and len(hidden_date) == 10:
+            st.session_state.cal_sel_date = hidden_date
+            st.rerun()
 
-        # カレンダーHTML生成
+        # カレンダーHTML（ボタンクリック→隠し入力に値セット→Enterキー発火）
         cal = calendar.monthcalendar(st.session_state.cal_y, st.session_state.cal_m)
+        sel_d = st.session_state.cal_sel_date
         cal_rows = ""
         for week in cal:
             cal_rows += "<tr>"
@@ -232,88 +251,100 @@ def main():
                     if d_str == today_str: cls += " today"
                     if d_str in rec_dates: cls += " rec"
                     if d_str == sel_d: cls += " sel"
-                    dot = "<span class='dot'>●</span>" if d_str in rec_dates else "<span class='dot'></span>"
-                    cal_rows += f'<td><button class="{cls}" onclick="pick(\'{d_str}\')">{day}{dot}</button></td>'
+                    dot = "<span class='dot'>●</span>" if d_str in rec_dates else "<span class='dot'>&nbsp;</span>"
+                    cal_rows += (
+                        f'<td><button class="{cls}" '
+                        f'onclick="pickDate(\'{d_str}\')">'
+                        f'{day}{dot}</button></td>'
+                    )
             cal_rows += "</tr>"
 
-        html_code = f"""
+        cal_html = f"""
 <style>
-*{{box-sizing:border-box;margin:0;padding:0;}}
-body{{background:transparent;font-family:sans-serif;}}
-table{{width:100%;border-collapse:collapse;table-layout:fixed;}}
-th{{font-size:11px;color:#999;font-weight:bold;padding:6px 0;text-align:center;}}
-td{{padding:2px;text-align:center;}}
-.sat{{color:#2196F3!important;}}
-.sun{{color:#E53935!important;}}
-button.day{{
-  width:100%;aspect-ratio:1;max-width:44px;
-  border:none;border-radius:50%;background:transparent;
-  font-size:12px;cursor:pointer;display:flex;
-  flex-direction:column;align-items:center;justify-content:center;
-  gap:1px;padding:0;color:#333;
+* {{ box-sizing: border-box; margin: 0; padding: 0; }}
+body {{ background: transparent; font-family: sans-serif; }}
+table {{ width: 100%; border-collapse: collapse; table-layout: fixed; }}
+th {{ font-size: 11px; color: #999; font-weight: bold; padding: 6px 0; text-align: center; }}
+th.sat {{ color: #2196F3; }}
+th.sun {{ color: #E53935; }}
+td {{ padding: 2px; text-align: center; }}
+button.day {{
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    max-width: 42px;
+    border: none;
+    border-radius: 50%;
+    background: transparent;
+    font-size: 12px;
+    cursor: pointer;
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1px;
+    padding: 0;
+    color: #333;
+    -webkit-tap-highlight-color: rgba(0,0,0,0.1);
 }}
-button.day:active{{opacity:0.7;}}
-button.day.today{{border:2px solid #0066cc;}}
-button.day.rec{{background:#ddeeff;color:#0044aa;font-weight:bold;}}
-button.day.sel{{background:#0066cc!important;color:#fff!important;border:none!important;}}
-.dot{{font-size:6px;line-height:1;color:#2196F3;min-height:7px;}}
-button.day.sel .dot{{color:#fff;}}
-th.sat{{color:#2196F3;}} th.sun{{color:#E53935;}}
+button.day.sat {{ color: #2196F3; }}
+button.day.sun {{ color: #E53935; }}
+button.day.today {{ border: 2px solid #0066cc; }}
+button.day.rec {{ background: #ddeeff; color: #0044aa; font-weight: bold; }}
+button.day.sel {{ background: #0066cc !important; color: white !important; border: none !important; }}
+button.day.sel .dot {{ color: white; }}
+.dot {{ font-size: 6px; line-height: 1; color: #2196F3; display: block; min-height: 7px; }}
 </style>
+
 <table>
-<tr>
-  <th>月</th><th>火</th><th>水</th><th>木</th><th>金</th>
-  <th class="sat">土</th><th class="sun">日</th>
-</tr>
-{cal_rows}
+  <tr>
+    <th>月</th><th>火</th><th>水</th><th>木</th><th>金</th>
+    <th class="sat">土</th><th class="sun">日</th>
+  </tr>
+  {cal_rows}
 </table>
-<input type="text" id="out" style="position:absolute;left:-9999px;top:-9999px;" />
+
 <script>
-function pick(d){{
-  var el=document.getElementById('out');
-  el.value=d;
-  el.dispatchEvent(new Event('input',{{bubbles:true}}));
-  // Streamlit の親フレームへ送信
-  window.parent.postMessage({{isStreamlitMessage:true,type:'streamlit:setComponentValue',value:d}},'*');
+function pickDate(d) {{
+  // Streamlitのtext_inputを探してEnterを発火
+  var inputs = window.parent.document.querySelectorAll('input[type="text"]');
+  var target = null;
+  for (var i = 0; i < inputs.length; i++) {{
+    // label_visibility="collapsed"のinputを特定
+    if (inputs[i].value.length === 10 || inputs[i].value === '') {{
+      target = inputs[i];
+    }}
+  }}
+  if (target) {{
+    var nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+      window.parent.HTMLInputElement.prototype, 'value'
+    ).set;
+    nativeInputValueSetter.call(target, d);
+    target.dispatchEvent(new Event('input', {{ bubbles: true }}));
+    // Enterキーを発火してStreamlitに送信
+    target.dispatchEvent(new KeyboardEvent('keydown', {{
+      key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true
+    }}));
+  }}
 }}
 </script>
 """
-
-        clicked = components.html(html_code, height=260, scrolling=False)
-
-        # ★ clicked の値を使う（Noneでなければ更新）
-        if clicked is not None and str(clicked) != sel_d:
-            st.session_state.cal_sel_date = str(clicked)
-            st.rerun()
-
-        # ★ 補助：手動選択ボタン（HTMLクリックが効かない環境向け保険）
-        # 記録のある日付だけボタンで選べるようにする
-        if not user_recs.empty:
-            month_recs = sorted([
-                d for d in rec_dates
-                if d.startswith(f"{st.session_state.cal_y}-{st.session_state.cal_m:02d}")
-            ])
-            if month_recs:
-                st.caption("▼ 記録のある日付をタップしても選択できます")
-                btn_cols = st.columns(len(month_recs))
-                for idx, d in enumerate(month_recs):
-                    day_num = int(d.split("-")[2])
-                    with btn_cols[idx]:
-                        if st.button(str(day_num), key=f"qb_{d}"):
-                            st.session_state.cal_sel_date = d
-                            st.rerun()
+        components.html(cal_html, height=260, scrolling=False)
 
         # 詳細表示
         st.divider()
+        sel_d = st.session_state.cal_sel_date
         st.markdown(f"**📅 {sel_d} の記録**")
+
         det = user_recs[user_recs['date'] == sel_d]
         if not det.empty:
             row = det.iloc[0]
             pts = clean_val(row['points'])
             inv = display_format(row['investment_items'])
             debt = display_format(row['debt_items'])
-            try: pts_num = int(pts)
-            except: pts_num = 0
+            try:
+                pts_num = int(pts)
+            except:
+                pts_num = 0
             pts_color = "#0066cc" if pts_num > 0 else ("#cc3333" if pts_num < 0 else "#888")
             st.markdown(
                 f"<div style='background:#f8f9fa;border-radius:12px;padding:15px;'>"

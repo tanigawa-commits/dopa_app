@@ -4,7 +4,6 @@ from datetime import datetime, date, timedelta
 from streamlit_gsheets import GSheetsConnection
 import hashlib
 import time
-import calendar
 
 # --- 1. アプリ設定 ---
 st.set_page_config(page_title="Dopamine Tracker", layout="wide")
@@ -144,7 +143,7 @@ def main():
 
     tab1, tab2, tab3, tab4 = st.tabs(["今日の記録", "ランキング", "マイデータ", "設定"])
 
-    # --- 今日の記録 ---
+    # --- タブ1: 今日の記録 ---
     with tab1:
         total_pts = pd.to_numeric(user_recs['points'], errors='coerce').fillna(0).sum()
         st.write(f"### {current_nickname}さんの累計ポイントは {total_pts:g} ptです")
@@ -187,7 +186,7 @@ def main():
                     st.cache_data.clear(); st.rerun()
         record_ui()
 
-    # --- ランキング ---
+    # --- タブ2: ランキング ---
     with tab2:
         st.subheader("🏆 累計ポイントランキング")
         if not all_recs.empty:
@@ -200,34 +199,33 @@ def main():
             summary["順位"] = summary["points"].rank(ascending=False, method='min').astype(int)
             st.dataframe(summary.sort_values("順位")[["順位", "表示名", "points"]].rename(columns={"points":"累計"}), use_container_width=True, hide_index=True, column_config={"順位":st.column_config.NumberColumn(alignment="left"), "累計":st.column_config.NumberColumn(format="%d", alignment="left")})
 
-    # --- マイデータ ---
+    # --- タブ3: マイデータ（カレンダーから全履歴テーブルへ変更） ---
     with tab3:
-        st.subheader("🗓 履歴の確認")
-        sel_date = st.date_input("確認したい日を選択してください", value=date.today())
-        year, month = sel_date.year, sel_date.month
-        cal = calendar.monthcalendar(year, month)
-        recorded_dates = user_recs['date'].unique().tolist() if not user_recs.empty else []
-        st.write(f"▼ {month}月の記録状況 (🔵=記録あり)")
-        map_html = "<table style='width:100%; text-align:center; border-collapse:collapse; font-size:14px;'><tr><td>月</td><td>火</td><td>水</td><td>木</td><td>金</td><td>土</td><td>日</td></tr>"
-        for week in cal:
-            map_html += "<tr>"
-            for day in week:
-                if day == 0: map_html += "<td></td>"
-                else:
-                    d_str = f"{year}-{month:02d}-{day:02d}"
-                    dot = "🔵" if d_str in recorded_dates else ""
-                    map_html += f"<td style='border:1px solid #eee; padding:5px;'>{day}<br>{dot}</td>"
-            map_html += "</tr>"
-        map_html += "</table>"
-        st.markdown(map_html, unsafe_allow_html=True)
-        st.divider()
-        det = user_recs[user_recs['date'] == str(sel_date)]
-        if not det.empty:
-            d = det.iloc[0]
-            st.info(f"📅 {sel_date} の詳細\n\n🟢 投資型: {display_format(d['investment_items'])}\n\n🔴 借金型: {display_format(d['debt_items'])}")
-        else: st.warning("この日の記録はありません。")
+        st.subheader("📋 全履歴の一覧")
+        if not user_recs.empty:
+            # 必要な列だけ抽出し、日付の新しい順に並び替え
+            display_recs = user_recs[['date', 'points', 'investment_items', 'debt_items']].copy()
+            display_recs = display_recs.sort_values('date', ascending=False)
+            
+            # 列名の日本語化
+            display_recs.columns = ['日付', 'ポイント', '投資したこと', '自分への借金']
+            
+            # データフレームで表示（ブラウザ幅に合わせて自動調整）
+            st.dataframe(
+                display_recs,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "ポイント": st.column_config.NumberColumn(format="%d pt"),
+                    "日付": st.column_config.DateColumn(format="YYYY/MM/DD")
+                }
+            )
+            
+            st.caption("※ 表のヘッダーをクリックすると並び替えができます。")
+        else:
+            st.warning("まだ記録がありません。「今日の記録」から登録してみましょう！")
 
-    # --- 設定 ---
+    # --- タブ4: 設定 ---
     with tab4:
         st.subheader("⚙️ 設定")
         new_nick = st.text_input("ニックネーム変更", value=current_nickname)

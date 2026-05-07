@@ -5,11 +5,13 @@ from streamlit_gsheets import GSheetsConnection
 import hashlib
 import time
 
-# --- 1. アプリ設定 ---
+# --- 1. アプリ設定・定数 ---
 st.set_page_config(page_title="Dopamine Tracker", layout="wide")
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-SECRET_AUTH_CODE = "feelist2026" 
+SECRET_AUTH_CODE = "2026" 
+# ★集計開始日を5月1日に設定
+APP_START_DATE = date(2026, 5, 1)
 
 # デザインCSS
 st.markdown("""
@@ -23,28 +25,15 @@ st.markdown("""
     .status-label { font-size: 16px; font-weight: bold; margin-bottom: 5px; }
     .status-count { font-size: 15px; color: #333; font-weight: bold; height: 22px; }
 
-    /* 【履歴テーブル専用CSS】自動折り返しを実現 */
+    /* 履歴テーブル（自動折り返し） */
     .history-table {
-        width: 100%;
-        border-collapse: collapse;
-        font-size: 14px;
-        table-layout: fixed;
-        background-color: white;
+        width: 100%; border-collapse: collapse; font-size: 14px; table-layout: fixed; background-color: white;
     }
     .history-table th, .history-table td {
-        border: 1px solid #f0f0f0;
-        padding: 10px 8px;
-        text-align: left;
-        vertical-align: top;
-        word-wrap: break-word;
-        white-space: normal;
-        overflow-wrap: break-word;
+        border: 1px solid #f0f0f0; padding: 10px 8px; text-align: left; vertical-align: top;
+        word-wrap: break-word; white-space: normal; overflow-wrap: break-word;
     }
-    .history-table th {
-        background-color: #f8f9fb;
-        color: #666;
-        font-weight: bold;
-    }
+    .history-table th { background-color: #f8f9fb; color: #666; font-weight: bold; }
     .col-date { width: 100px; }
     .col-pts { width: 80px; text-align: right !important; }
     </style>
@@ -55,22 +44,18 @@ st.markdown("""
 def make_hash(password): return hashlib.sha256(str.encode(password)).hexdigest()
 
 def clean_val_for_display(x):
-    """ 表の表示用：空の値やNoneを全角ハイフンにする """
     if pd.isna(x): return "－"
     s = str(x).strip()
     if s.lower() in ["nan", "none", "", "null"]: return "－"
     return s
 
 def normalize_id(x):
-    """ IDを4桁のきれいな文字列にする（.0を徹底排除） """
+    """ .0を徹底排除して4桁文字列にする """
     s = str(x).strip()
     if s.endswith('.0'): s = s[:-2]
     if not s or s.lower() in ["nan", "none"]: return ""
-    try:
-        # 一度数値にしてから再度整数として文字列化することで.0を消す
-        return str(int(float(s))).zfill(4)
-    except:
-        return s.zfill(4)
+    try: return str(int(float(s))).zfill(4)
+    except: return s.zfill(4)
 
 @st.cache_data(ttl=60)
 def load_data_cached(sheet_name):
@@ -93,14 +78,14 @@ DEBT_ITEMS = ["外食オンリー", "掃除なし", "睡眠不足", "シャワ�
 # --- 3. メイン処理 ---
 def main():
     if 'authenticated' not in st.session_state: st.session_state.authenticated = False
-    if 'last_logged_id' not in st.session_state: st.session_state.last_logged_id = ""
+    if 'current_user' not in st.session_state: st.session_state.current_user = ""
     if 'form_version' not in st.session_state: st.session_state.form_version = 0
 
     # 認証
     if not st.session_state.authenticated:
         st.title("🔒 Dopamine Tracker - 認証")
         id_msg = st.empty()
-        target_id = st.text_input("社員番号(4桁)", value=st.session_state.last_logged_id, max_chars=4)
+        target_id = st.text_input("社員番号(4桁)", max_chars=4)
         if target_id:
             if len(target_id) != 4: id_msg.error("社員番号は4桁で入力してください")
             else:
@@ -115,17 +100,14 @@ def main():
                         stored_hash = str(raw_hash).strip() if pd.notna(raw_hash) and str(raw_hash).lower() not in ["nan", "none", ""] else None
                         if not stored_hash:
                             with st.form("init_reg"):
-                                st.info("初回登録：パスワードを設定してください（４文字以上）")
-                                reg_msg = st.empty()
-                                ac, np, npc = st.text_input("秘密の合言葉", type="password"), st.text_input("PW", type="password"), st.text_input("確認", type="password")
-                                if st.form_submit_button("登録してログイン"):
-                                    if ac != SECRET_AUTH_CODE: reg_msg.error("秘密の合言葉が違います")
-                                    elif len(np) < 4: reg_msg.error("パスワードは４文字以上")
-                                    elif np != npc: reg_msg.error("不一致")
+                                st.info("初回登録：パスワードを設定（4文字以上）")
+                                ac, np, npc = st.text_input("秘密の合言葉", type="password"), st.text_input("新PW", type="password"), st.text_input("確認", type="password")
+                                if st.form_submit_button("登録"):
+                                    if ac != SECRET_AUTH_CODE: st.error("合言葉が違います")
+                                    elif len(np) < 4: st.error("4文字以上必要です")
+                                    elif np != npc: st.error("不一致です")
                                     else:
-                                        reg_msg.empty()
                                         cm = conn.read(worksheet="UserMaster", ttl="0s").astype(str)
-                                        # DB書き込み前にIDから.0を排除して4桁固定にする
                                         cm['emp_id'] = cm['emp_id'].apply(normalize_id)
                                         idx = cm[cm['emp_id'] == tid_norm].index[0]
                                         cm.at[idx, 'password_hash'], cm.at[idx, 'nickname'] = str(make_hash(np)), tid_norm
@@ -134,16 +116,15 @@ def main():
                                         st.cache_data.clear(); st.rerun()
                         else:
                             with st.form("login_f"):
-                                login_msg = st.empty()
                                 ip = st.text_input("パスワード", type="password")
                                 if st.form_submit_button("ログイン"):
                                     if make_hash(ip) == stored_hash:
-                                        login_msg.empty()
                                         st.session_state.update({"authenticated":True, "current_user":tid_norm})
                                         st.cache_data.clear(); st.rerun()
-                                    else: login_msg.error("パスワードが違います")
+                                    else: st.error("パスワードが違います")
         st.stop()
 
+    # データ同期
     current_emp_id = st.session_state.current_user
     master_data = load_data_cached("UserMaster")
     user_info = master_data[master_data['emp_id_norm'] == current_emp_id].iloc[0]
@@ -160,11 +141,26 @@ def main():
 
     tab1, tab2, tab3, tab4 = st.tabs(["今日の記録", "ランキング", "マイデータ", "設定"])
 
-    # --- タブ1: 今日の記録 ---
+    # --- タブ1: 今日の記録（指標：5/1開始基準） ---
     with tab1:
-        valid_pts = pd.to_numeric(user_recs['points'], errors='coerce').fillna(0)
-        st.write(f"### {current_nickname}さんの累計ポイントは {int(valid_pts.sum())} ptです")
-        target_date = st.date_input("対象日（７日前まで遡って登録、修正が出来ます）", value=date.today(), min_value=date.today()-timedelta(days=7), max_value=date.today())
+        today_date = date.today()
+        # 1. 経過日数の計算（5/1以降）
+        elapsed_days = (today_date - APP_START_DATE).days + 1
+        elapsed_days = max(elapsed_days, 1) 
+        
+        # 2. 登録日数の計算
+        recorded_days = user_recs['date'].nunique() if not user_recs.empty else 0
+        
+        # 3. 入力率（四捨五入）
+        input_rate = int(round((recorded_days / elapsed_days) * 100))
+        
+        # 4. 平均ポイント（小数点第1位）
+        total_pts = pd.to_numeric(user_recs['points'], errors='coerce').fillna(0).sum()
+        avg_points = round(total_pts / recorded_days, 1) if recorded_days > 0 else 0.0
+
+        st.write(f"### {current_nickname}さんの入力率は {input_rate} ％、平均ポイントは {avg_points:.1f} ptです")
+        
+        target_date = st.date_input("対象日（7日前まで遡れます）", value=today_date, min_value=today_date-timedelta(days=7), max_value=today_date)
 
         @st.fragment
         def record_ui():
@@ -193,7 +189,6 @@ def main():
             if st.button("登録する", type="primary", use_container_width=True):
                 with st.spinner("保存中..."):
                     db = conn.read(worksheet="Records", ttl="0s").astype(str)
-                    # 書き込み前に社員番号をきれいにする
                     db['real_name'] = db['real_name'].apply(normalize_id)
                     new_row = pd.DataFrame([{"real_name": current_emp_id, "date": str(target_date), "points": str(n_inv - n_debt), "entry_date": str(datetime.now()), "investment_items": ", ".join(sel_inv), "debt_items": ", ".join(sel_debt)}])
                     others = db[~((db['real_name'] == current_emp_id) & (db['date'] == str(target_date)))]
@@ -201,7 +196,7 @@ def main():
                     st.balloons(); time.sleep(2); st.session_state.form_version += 1; st.cache_data.clear(); st.rerun()
         record_ui()
 
-    # --- タブ2: ランキング（pt表示追加） ---
+    # --- タブ2: ランキング ---
     with tab2:
         st.subheader("🏆 累計ポイントランキング")
         if not all_recs.empty:
@@ -212,18 +207,13 @@ def main():
             summary['ニックネーム'] = summary['nickname'].apply(lambda x: x if pd.notna(x) and str(x).lower() not in ["nan", "none", ""] else "－")
             summary["順位"] = summary["points"].rank(ascending=False, method='min').astype(int)
             summary = summary.rename(columns={"points": "累計"})
-            # ポイント数に pt を付ける設定
             st.dataframe(
                 summary.sort_values("順位")[["順位", "ニックネーム", "累計"]],
-                use_container_width=True,
-                hide_index=True,
-                column_config={
-                    "順位": st.column_config.NumberColumn(alignment="left"),
-                    "累計": st.column_config.NumberColumn(format="%d pt", alignment="left")
-                }
+                use_container_width=True, hide_index=True,
+                column_config={"順位": st.column_config.NumberColumn(alignment="left"), "累計": st.column_config.NumberColumn(format="%d pt", alignment="left")}
             )
 
-    # --- タブ3: マイデータ（HTMLテーブル・自動折り返し） ---
+    # --- タブ3: マイデータ（自動折り返しHTMLテーブル） ---
     with tab3:
         st.subheader("📋 全履歴の一覧")
         if not user_recs.empty:
@@ -246,10 +236,9 @@ def main():
         new_nick = st.text_input("ニックネーム変更", value=current_nickname)
         st.markdown("---")
         st.write("🔒 パスワードの変更")
-        new_pw, new_pw_c = st.text_input("新PW", type="password"), st.text_input("確認", type="password")
+        new_pw, new_pw_c = st.text_input("新PW", type="password"), st.text_input("確認用", type="password")
         if st.button("設定を更新する"):
             m_db = conn.read(worksheet="UserMaster", ttl="0s").astype(str)
-            # 書き込み前に全ての社員番号から.0を排除
             m_db['emp_id'] = m_db['emp_id'].apply(normalize_id)
             idx = m_db[m_db['emp_id'] == current_emp_id].index[0]
             m_db.at[idx, 'nickname'] = new_nick

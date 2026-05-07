@@ -101,7 +101,7 @@ def main():
                         if not stored_hash:
                             with st.form("init_reg"):
                                 st.info("初回登録：パスワードを設定（4文字以上）")
-                                ac, np, npc = st.text_input("秘密の合言葉", type="password"), st.text_input("新PW", type="password"), st.text_input("確認", type="password")
+                                ac, np, npc = st.text_input("秘密の合言葉", type="password"), st.text_input("PW", type="password"), st.text_input("確認", type="password")
                                 if st.form_submit_button("登録"):
                                     if ac != SECRET_AUTH_CODE: st.error("合言葉が違います")
                                     elif len(np) < 4: st.error("4文字以上必要です")
@@ -141,22 +141,33 @@ def main():
 
     tab1, tab2, tab3, tab4 = st.tabs(["今日の記録", "ランキング", "マイデータ", "設定"])
 
-    # --- タブ1: 今日の記録（指標：5/1開始基準） ---
+    # --- タブ1: 今日の記録（指標計算の修正） ---
     with tab1:
         today_date = date.today()
-        # 1. 経過日数の計算（5/1以降）
+        
+        # 指標計算用に、集計開始日(5/1)以降のレコードだけに絞り込む
+        if not user_recs.empty:
+            # 日付列を比較可能な型に変換
+            user_recs_filtered = user_recs.copy()
+            user_recs_filtered['date_dt'] = pd.to_datetime(user_recs_filtered['date']).dt.date
+            # APP_START_DATE(5/1) 以降のみを抽出
+            user_recs_filtered = user_recs_filtered[user_recs_filtered['date_dt'] >= APP_START_DATE]
+        else:
+            user_recs_filtered = pd.DataFrame()
+
+        # 1. 経過日数の計算（5/1〜今日）
         elapsed_days = (today_date - APP_START_DATE).days + 1
         elapsed_days = max(elapsed_days, 1) 
         
-        # 2. 登録日数の計算
-        recorded_days = user_recs['date'].nunique() if not user_recs.empty else 0
+        # 2. 登録日数の計算 (5/1以降)
+        recorded_days = user_recs_filtered['date'].nunique() if not user_recs_filtered.empty else 0
         
         # 3. 入力率（四捨五入）
         input_rate = int(round((recorded_days / elapsed_days) * 100))
         
-        # 4. 平均ポイント（小数点第1位）
-        total_pts = pd.to_numeric(user_recs['points'], errors='coerce').fillna(0).sum()
-        avg_points = round(total_pts / recorded_days, 1) if recorded_days > 0 else 0.0
+        # 4. 平均ポイント（5/1以降のみの累計 ÷ 5/1以降の登録日数）
+        filtered_pts = pd.to_numeric(user_recs_filtered['points'], errors='coerce').fillna(0).sum() if not user_recs_filtered.empty else 0
+        avg_points = round(filtered_pts / recorded_days, 1) if recorded_days > 0 else 0.0
 
         st.write(f"### {current_nickname}さんの入力率は {input_rate} ％、平均ポイントは {avg_points:.1f} ptです")
         
@@ -213,7 +224,7 @@ def main():
                 column_config={"順位": st.column_config.NumberColumn(alignment="left"), "累計": st.column_config.NumberColumn(format="%d pt", alignment="left")}
             )
 
-    # --- タブ3: マイデータ（自動折り返しHTMLテーブル） ---
+    # --- タブ3: マイデータ（全履歴を表示） ---
     with tab3:
         st.subheader("📋 全履歴の一覧")
         if not user_recs.empty:

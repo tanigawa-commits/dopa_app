@@ -9,7 +9,7 @@ import time
 st.set_page_config(page_title="Dopamine Tracker", layout="wide")
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-SECRET_AUTH_CODE = "2026" 
+SECRET_AUTH_CODE = "feelist2026" 
 # ★集計開始日を5月1日に設定
 APP_START_DATE = date(2026, 5, 1)
 # JST（日本標準時）の設定

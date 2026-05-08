@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, timezone
 from streamlit_gsheets import GSheetsConnection
 import hashlib
 import time
@@ -12,6 +12,8 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 SECRET_AUTH_CODE = "2026" 
 # ★集計開始日を5月1日に設定
 APP_START_DATE = date(2026, 5, 1)
+# JST（日本標準時）の設定
+JST = timezone(timedelta(hours=9))
 
 # デザインCSS
 st.markdown("""
@@ -44,6 +46,7 @@ st.markdown("""
 def make_hash(password): return hashlib.sha256(str.encode(password)).hexdigest()
 
 def clean_val_for_display(x):
+    """ 表の表示用：空の値やNoneを全角ハイフンにする """
     if pd.isna(x): return "－"
     s = str(x).strip()
     if s.lower() in ["nan", "none", "", "null"]: return "－"
@@ -102,7 +105,7 @@ def main():
                             with st.form("init_reg"):
                                 st.info("初回登録：パスワードを設定（4文字以上）")
                                 ac, np, npc = st.text_input("秘密の合言葉", type="password"), st.text_input("PW", type="password"), st.text_input("確認", type="password")
-                                if st.form_submit_button("登録"):
+                                if st.form_submit_button("登録してログイン"):
                                     if ac != SECRET_AUTH_CODE: st.error("合言葉が違います")
                                     elif len(np) < 4: st.error("4文字以上必要です")
                                     elif np != npc: st.error("不一致です")
@@ -141,16 +144,14 @@ def main():
 
     tab1, tab2, tab3, tab4 = st.tabs(["今日の記録", "ランキング", "マイデータ", "設定"])
 
-    # --- タブ1: 今日の記録（指標計算の修正） ---
+    # --- タブ1: 今日の記録（指標計算：5/1基準） ---
     with tab1:
         today_date = date.today()
         
         # 指標計算用に、集計開始日(5/1)以降のレコードだけに絞り込む
         if not user_recs.empty:
-            # 日付列を比較可能な型に変換
             user_recs_filtered = user_recs.copy()
             user_recs_filtered['date_dt'] = pd.to_datetime(user_recs_filtered['date']).dt.date
-            # APP_START_DATE(5/1) 以降のみを抽出
             user_recs_filtered = user_recs_filtered[user_recs_filtered['date_dt'] >= APP_START_DATE]
         else:
             user_recs_filtered = pd.DataFrame()
@@ -165,7 +166,7 @@ def main():
         # 3. 入力率（四捨五入）
         input_rate = int(round((recorded_days / elapsed_days) * 100))
         
-        # 4. 平均ポイント（5/1以降のみの累計 ÷ 5/1以降の登録日数）
+        # 4. 平均ポイント（5/1以降）
         filtered_pts = pd.to_numeric(user_recs_filtered['points'], errors='coerce').fillna(0).sum() if not user_recs_filtered.empty else 0
         avg_points = round(filtered_pts / recorded_days, 1) if recorded_days > 0 else 0.0
 
@@ -201,7 +202,19 @@ def main():
                 with st.spinner("保存中..."):
                     db = conn.read(worksheet="Records", ttl="0s").astype(str)
                     db['real_name'] = db['real_name'].apply(normalize_id)
-                    new_row = pd.DataFrame([{"real_name": current_emp_id, "date": str(target_date), "points": str(n_inv - n_debt), "entry_date": str(datetime.now()), "investment_items": ", ".join(sel_inv), "debt_items": ", ".join(sel_debt)}])
+                    
+                    # 日本時間(JST)で現在時刻を生成
+                    now_jst = datetime.now(JST).strftime('%Y-%m-%d %H:%M:%S')
+                    
+                    new_row = pd.DataFrame([{
+                        "real_name": current_emp_id, 
+                        "date": str(target_date), 
+                        "points": str(n_inv - n_debt), 
+                        "entry_date": now_jst, 
+                        "investment_items": ", ".join(sel_inv), 
+                        "debt_items": ", ".join(sel_debt)
+                    }])
+                    
                     others = db[~((db['real_name'] == current_emp_id) & (db['date'] == str(target_date)))]
                     conn.update(worksheet="Records", data=pd.concat([others, new_row]).reset_index(drop=True))
                     st.balloons(); time.sleep(2); st.session_state.form_version += 1; st.cache_data.clear(); st.rerun()
@@ -224,7 +237,7 @@ def main():
                 column_config={"順位": st.column_config.NumberColumn(alignment="left"), "累計": st.column_config.NumberColumn(format="%d pt", alignment="left")}
             )
 
-    # --- タブ3: マイデータ（全履歴を表示） ---
+    # --- タブ3: マイデータ（全履歴） ---
     with tab3:
         st.subheader("📋 全履歴の一覧")
         if not user_recs.empty:

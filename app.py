@@ -47,6 +47,7 @@ st.markdown("""
 def make_hash(password): return hashlib.sha256(str.encode(password)).hexdigest()
 
 def clean_val_for_display(x):
+    """ 表の表示用：空の値やNoneを全角ハイフンにする """
     if pd.isna(x): return "－"
     s = str(x).strip()
     if s.lower() in ["nan", "none", "", "null"]: return "－"
@@ -74,22 +75,38 @@ def load_data_cached(sheet_name):
     except Exception:
         return pd.DataFrame()
 
-# ★項目定義：添付画像に完全同期
+# ★項目定義：最新の添付画像に一字一句同期
 INVESTMENT_ITEMS = [
-    "経験のない事への挑戦", "料理", "掃除", "睡眠が8時間以上", "入浴、サウナ", 
-    "朝10分前に出社", "身体を動かす", "勉強", "読書", "創作活動", 
-    "音楽", "ニュースを調べる", "旅行", "行ったことのない店にいく", 
-    "ファッションに挑戦", "メイク・ネイルに挑戦", "模様替え", "家族で食事", 
-    "感謝の言葉を伝える", "植物を育てる", "ペットと触れ合う"
+    "料理", "掃除", "睡眠が8時間以上", "湯舟に入浴、サウナ", "朝10分前に出社",
+    "身体を動かした（ウォーキング以上の負荷）",
+    "健康的な食生活（栄養バランスが取れている）",
+    "洗濯",
+    "ニュースを30分みる（ネット可）",
+    "学習",
+    "読書（活字限定）",
+    "創作（プログラミング、絵、小説、DTM、DIY）",
+    "音楽（音楽鑑賞、楽器、カラオケ）",
+    "大きな声で挨拶",
+    "感謝の言葉を伝える",
+    "家族との時間を過ごす",
+    "植物を育てる",
+    "ペットと触れ合う",
+    "普段やらない事を挑戦（旅行、模様替え、ファッション、美容）"
 ]
 
 DEBT_ITEMS = [
-    "倫理観に欠ける行動", "外食オンリー", "掃除をしない", "睡眠が6時間未満", 
-    "シャワーのみ/風呂抜き", "朝ギリギリに出社", "過度な飲酒", "食後の間食", 
-    "ドカ食い(2000kcal+)", "動画見ながらお菓子", "高カロリー炭酸飲料", "タバコ", 
-    "スマホ2時間以上", "Youtube2時間以上", "SNS2時間以上", "ゲーム2時間以上", 
-    "ログイン報酬のみ起動", "ゲームへの課金", "ギャンブル", "借金・リボ払い", 
-    "衝動買い", "家から出なかった"
+    "外食オンリー", "掃除をしなかった", "睡眠が6時間以下",
+    "シャワーのみ／お風呂に入らなかった", "朝ギリギリに出社", "家で1日ゴロゴロ",
+    "ギルティな食生活（ドカ食い、間食、炭酸飲料、エナドリ）",
+    "アルコール摂取（缶ビール1本以上）",
+    "タバコ（紙、加熱式、電子）",
+    "スマホを2時間以上使用",
+    "TV/Youtubeなど映像を2時間以上視聴",
+    "SNSアプリを2時間以上使用",
+    "ゲームを2時間以上プレイ",
+    "ソシャゲのログイン報酬を受け取るためだけに起動",
+    "ゲームへの課金", "ギャンブル", "無駄な出費", "独り言が多かった",
+    "倫理観に欠ける行動（電車で席を譲らない、夜にゴミを出す等）"
 ]
 
 # --- 3. メイン処理 ---
@@ -119,7 +136,7 @@ def main():
                             with st.form("init_reg"):
                                 st.info("初回登録：パスワードを設定（4文字以上）")
                                 ac, np, npc = st.text_input("秘密の合言葉", type="password"), st.text_input("新PW", type="password"), st.text_input("確認", type="password")
-                                if st.form_submit_button("登録してログイン"):
+                                if st.form_submit_button("登録"):
                                     if ac != SECRET_AUTH_CODE: st.error("合言葉が違います")
                                     elif len(np) < 4: st.error("4文字以上必要です")
                                     elif np != npc: st.error("不一致です")
@@ -141,7 +158,7 @@ def main():
                                     else: st.error("パスワードが違います")
         st.stop()
 
-    # データ読み込み
+    # データ同期
     current_emp_id = st.session_state.current_user
     master_data = load_data_cached("UserMaster")
     user_info = master_data[master_data['emp_id_norm'] == current_emp_id].iloc[0]
@@ -217,7 +234,7 @@ def main():
                     st.balloons(); time.sleep(2); st.session_state.form_version += 1; st.cache_data.clear(); st.rerun()
         record_ui()
 
-    # --- タブ2: ランキング（入力率・平均ポイント指標） ---
+    # --- タブ2: ランキング（入力率・平均ポイント順） ---
     with tab2:
         st.subheader("🏆 継続＆質 ランキング")
         if not all_recs.empty:
@@ -240,7 +257,6 @@ def main():
                 summary = summary.merge(mini, left_on='real_name_norm', right_on='emp_id_norm', how='left')
                 summary['ニックネーム'] = summary['nickname'].apply(lambda x: x if pd.notna(x) and str(x).lower() not in ["nan", "none", ""] else "－")
                 
-                # 並び替え：入力率(降) -> 平均ポイント(降)
                 summary = summary.sort_values(['入力率', '平均ポイント'], ascending=[False, False])
                 summary["順位"] = range(1, len(summary) + 1)
                 
@@ -255,7 +271,7 @@ def main():
                 )
             else: st.info("集計対象期間(5/1〜)のデータがまだありません。")
 
-    # --- タブ3: マイデータ ---
+    # --- タブ3: マイデータ（自動折り返しHTML） ---
     with tab3:
         st.subheader("📋 全履歴の一覧")
         if not user_recs.empty:

@@ -9,9 +9,9 @@ import time
 st.set_page_config(page_title="Dopamine Tracker", layout="wide")
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-# 合言葉の更新
+# 合言葉
 SECRET_AUTH_CODE = "feelist2026" 
-# 集集開始日
+# 集計開始日
 APP_START_DATE = date(2026, 5, 1)
 # JST（日本標準時）の設定
 JST = timezone(timedelta(hours=9))
@@ -19,6 +19,7 @@ JST = timezone(timedelta(hours=9))
 # デザインCSS
 st.markdown("""
     <style>
+    /* 記録カード */
     .status-card {
         border: 1px solid #e6e9ef; border-radius: 15px; padding: 15px; text-align: center;
         background-color: white; margin-bottom: 10px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
@@ -27,6 +28,7 @@ st.markdown("""
     .status-label { font-size: 16px; font-weight: bold; margin-bottom: 5px; }
     .status-count { font-size: 15px; color: #333; font-weight: bold; height: 22px; }
 
+    /* 履歴テーブル（自動折り返し） */
     .history-table {
         width: 100%; border-collapse: collapse; font-size: 14px; table-layout: fixed; background-color: white;
     }
@@ -51,7 +53,7 @@ def clean_val_for_display(x):
     return s
 
 def normalize_id(x):
-    """ .0を排除して4桁文字列にする """
+    """ .0を徹底排除して4桁文字列にする """
     s = str(x).strip()
     if s.endswith('.0'): s = s[:-2]
     if not s or s.lower() in ["nan", "none"]: return ""
@@ -72,8 +74,23 @@ def load_data_cached(sheet_name):
     except Exception:
         return pd.DataFrame()
 
-INVESTMENT_ITEMS = ["料理", "掃除", "睡眠が8時間以上", "湯舟に入浴、サウナ", "朝10分前に出社", "身体を動かした", "健康的な食生活", "洗濯", "ニュースをみる", "学習", "読書", "創作", "音楽", "挨拶", "感謝", "家族との時間", "植物", "ペット", "新しい挑戦"]
-DEBT_ITEMS = ["外食オンリー", "掃除なし", "睡眠不足", "シャワーのみ", "朝ギリギリ", "1日ゴロゴロ", "ギルティ食", "アルコール", "タバコ", "スマホ2h以上", "映像2h以上", "SNS2h以上", "ゲーム2h以上", "ソシャゲ起動", "ゲーム課金", "ギャンブル", "無駄な出費", "独り言", "倫理欠如"]
+# ★項目定義：添付画像に完全同期
+INVESTMENT_ITEMS = [
+    "経験のない事への挑戦", "料理", "掃除", "睡眠が8時間以上", "入浴、サウナ", 
+    "朝10分前に出社", "身体を動かす", "勉強", "読書", "創作活動", 
+    "音楽", "ニュースを調べる", "旅行", "行ったことのない店にいく", 
+    "ファッションに挑戦", "メイク・ネイルに挑戦", "模様替え", "家族で食事", 
+    "感謝の言葉を伝える", "植物を育てる", "ペットと触れ合う"
+]
+
+DEBT_ITEMS = [
+    "倫理観に欠ける行動", "外食オンリー", "掃除をしない", "睡眠が6時間未満", 
+    "シャワーのみ/風呂抜き", "朝ギリギリに出社", "過度な飲酒", "食後の間食", 
+    "ドカ食い(2000kcal+)", "動画見ながらお菓子", "高カロリー炭酸飲料", "タバコ", 
+    "スマホ2時間以上", "Youtube2時間以上", "SNS2時間以上", "ゲーム2時間以上", 
+    "ログイン報酬のみ起動", "ゲームへの課金", "ギャンブル", "借金・リボ払い", 
+    "衝動買い", "家から出なかった"
+]
 
 # --- 3. メイン処理 ---
 def main():
@@ -81,7 +98,7 @@ def main():
     if 'current_user' not in st.session_state: st.session_state.current_user = ""
     if 'form_version' not in st.session_state: st.session_state.form_version = 0
 
-    # 認証
+    # 認証セクション
     if not st.session_state.authenticated:
         st.title("🔒 Dopamine Tracker - 認証")
         id_msg = st.empty()
@@ -144,7 +161,6 @@ def main():
     # --- タブ1: 今日の記録（指標計算：5/1基準） ---
     with tab1:
         today_date = date.today()
-        # 集計開始日(5/1)以降のレコードに絞り込む
         if not user_recs.empty:
             user_recs_filtered = user_recs.copy()
             user_recs_filtered['date_dt'] = pd.to_datetime(user_recs_filtered['date']).dt.date
@@ -152,8 +168,7 @@ def main():
         else:
             user_recs_filtered = pd.DataFrame()
 
-        elapsed_days = (today_date - APP_START_DATE).days + 1
-        elapsed_days = max(elapsed_days, 1) 
+        elapsed_days = max((today_date - APP_START_DATE).days + 1, 1) 
         recorded_days = user_recs_filtered['date'].nunique() if not user_recs_filtered.empty else 0
         input_rate = int(round((recorded_days / elapsed_days) * 100))
         filtered_pts = pd.to_numeric(user_recs_filtered['points'], errors='coerce').fillna(0).sum() if not user_recs_filtered.empty else 0
@@ -170,10 +185,10 @@ def main():
             v = st.session_state.form_version
             c1, c2 = st.columns(2)
             with c1:
-                st.markdown("#### 🟢 投資型")
+                st.markdown("#### 🟢 投資型（自己投資）")
                 sel_inv = [i for i in INVESTMENT_ITEMS if st.checkbox(i, key=f"inv_{i}_{v}")]
             with c2:
-                st.markdown("#### 🔴 借金型")
+                st.markdown("#### 🔴 借金型（即時快楽）")
                 sel_debt = [i for i in DEBT_ITEMS if st.checkbox(i, key=f"debt_{i}_{v}")]
             
             n_inv, n_debt = len(sel_inv), len(sel_debt)
@@ -206,32 +221,26 @@ def main():
     with tab2:
         st.subheader("🏆 継続＆質 ランキング")
         if not all_recs.empty:
-            # 5/1以降の全ユーザーデータを抽出
             rdf = all_recs.copy()
             rdf['date_dt'] = pd.to_datetime(rdf['date']).dt.date
             rdf = rdf[rdf['date_dt'] >= APP_START_DATE]
             
             if not rdf.empty:
-                # 集計（ユーザーごとの登録日数とポイント合計）
                 summary = rdf.groupby("real_name_norm").agg({
                     'date': 'nunique',
                     'points': lambda x: pd.to_numeric(x, errors='coerce').fillna(0).sum()
                 }).reset_index()
                 summary.columns = ['real_name_norm', 'recorded_days', 'total_points']
-                
-                # 指標計算
-                today_date = date.today()
-                elapsed = max((today_date - APP_START_DATE).days + 1, 1)
+                elapsed = max((date.today() - APP_START_DATE).days + 1, 1)
                 
                 summary['入力率'] = (summary['recorded_days'] / elapsed * 100).round().astype(int)
                 summary['平均ポイント'] = (summary['total_points'] / summary['recorded_days']).round(1)
                 
-                # ユーザーマスタと結合してニックネーム取得
                 mini = master_data[['emp_id_norm', 'nickname']].drop_duplicates()
                 summary = summary.merge(mini, left_on='real_name_norm', right_on='emp_id_norm', how='left')
                 summary['ニックネーム'] = summary['nickname'].apply(lambda x: x if pd.notna(x) and str(x).lower() not in ["nan", "none", ""] else "－")
                 
-                # 並び替え：1.入力率(降順)、2.平均ポイント(降順)
+                # 並び替え：入力率(降) -> 平均ポイント(降)
                 summary = summary.sort_values(['入力率', '平均ポイント'], ascending=[False, False])
                 summary["順位"] = range(1, len(summary) + 1)
                 

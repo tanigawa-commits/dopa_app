@@ -113,9 +113,10 @@ DEBT_ITEMS = [
 def main():
     if 'authenticated' not in st.session_state: st.session_state.authenticated = False
     if 'current_user' not in st.session_state: st.session_state.current_user = ""
+    # form_versionは削除せず、クリアしない設定として維持
     if 'form_version' not in st.session_state: st.session_state.form_version = 0
 
-    # 認証セクション
+    # 認証
     if not st.session_state.authenticated:
         st.title("🔒 Dopamine Tracker - 認証")
         id_msg = st.empty()
@@ -135,7 +136,7 @@ def main():
                         if not stored_hash:
                             with st.form("init_reg"):
                                 st.info("初回登録：パスワードを設定（4文字以上）")
-                                ac, np, npc = st.text_input("秘密の合言葉", type="password"), st.text_input("新PW", type="password"), st.text_input("確認", type="password")
+                                ac, np, npc = st.text_input("秘密の合言葉", type="password"), st.text_input("新PW", type="password"), st.text_input("確認用", type="password")
                                 if st.form_submit_button("登録してログイン"):
                                     if ac != SECRET_AUTH_CODE: st.error("合言葉が違います")
                                     elif len(np) < 4: st.error("4文字以上必要です")
@@ -199,6 +200,7 @@ def main():
         def record_ui():
             st.divider()
             top_stars_p = st.empty()
+            # フォームバージョンは固定（インクリメントしないことで選択を維持）
             v = st.session_state.form_version
             c1, c2 = st.columns(2)
             with c1:
@@ -231,10 +233,12 @@ def main():
                     }])
                     others = db[~((db['real_name'] == current_emp_id) & (db['date'] == str(target_date)))]
                     conn.update(worksheet="Records", data=pd.concat([others, new_row]).reset_index(drop=True))
-                    st.balloons(); time.sleep(2); st.session_state.form_version += 1; st.cache_data.clear(); st.rerun()
+                    st.balloons(); time.sleep(2); 
+                    # ★ここで v += 1 を行わないことで、チェック状態を維持
+                    st.cache_data.clear(); st.rerun()
         record_ui()
 
-    # --- タブ2: ランキング（タイトル訂正：ランキング） ---
+    # --- タブ2: ランキング ---
     with tab2:
         st.subheader("🏆 ランキング")
         if not all_recs.empty:
@@ -257,7 +261,6 @@ def main():
                 summary = summary.merge(mini, left_on='real_name_norm', right_on='emp_id_norm', how='left')
                 summary['ニックネーム'] = summary['nickname'].apply(lambda x: x if pd.notna(x) and str(x).lower() not in ["nan", "none", ""] else "－")
                 
-                # 並び替え：入力率(降) -> 平均ポイント(降)
                 summary = summary.sort_values(['入力率', '平均ポイント'], ascending=[False, False])
                 summary["順位"] = range(1, len(summary) + 1)
                 

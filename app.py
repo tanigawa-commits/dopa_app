@@ -61,6 +61,12 @@ def normalize_id(x):
     try: return str(int(float(s))).zfill(4)
     except: return s.zfill(4)
 
+def clean_nick(x):
+    """ ニックネーム用の「.0」除去関数（文字列はそのまま残す） """
+    s = str(x).strip()
+    if s.endswith('.0'): s = s[:-2]
+    return s
+
 @st.cache_data(ttl=60)
 def load_data_cached(sheet_name):
     try:
@@ -71,6 +77,9 @@ def load_data_cached(sheet_name):
             df["emp_id_norm"] = df["emp_id"].apply(normalize_id)
         if "real_name" in df.columns:
             df["real_name_norm"] = df["real_name"].apply(normalize_id)
+        # 読み込みキャッシュ時に、あらかじめニックネームの .0 を消しておく
+        if "nickname" in df.columns:
+            df["nickname"] = df["nickname"].apply(clean_nick)
         return df
     except Exception:
         return pd.DataFrame()
@@ -113,7 +122,6 @@ DEBT_ITEMS = [
 def main():
     if 'authenticated' not in st.session_state: st.session_state.authenticated = False
     if 'current_user' not in st.session_state: st.session_state.current_user = ""
-    # form_versionは削除せず、クリアしない設定として維持
     if 'form_version' not in st.session_state: st.session_state.form_version = 0
 
     # 認証
@@ -164,7 +172,9 @@ def main():
     master_data = load_data_cached("UserMaster")
     user_info = master_data[master_data['emp_id_norm'] == current_emp_id].iloc[0]
     nickname_raw = user_info.get('nickname', current_emp_id)
-    current_nickname = str(nickname_raw) if pd.notna(nickname_raw) and str(nickname_raw).lower() not in ["nan", "none", ""] else current_emp_id
+    
+    # 表示名決定時にも「.0」を徹底的に排除する
+    current_nickname = clean_nick(nickname_raw) if pd.notna(nickname_raw) and str(nickname_raw).lower() not in ["nan", "none", ""] else clean_nick(current_emp_id)
     
     all_recs = load_data_cached("Records")
     user_recs = all_recs[all_recs['real_name_norm'] == current_emp_id] if not all_recs.empty else pd.DataFrame()
@@ -200,7 +210,6 @@ def main():
         def record_ui():
             st.divider()
             top_stars_p = st.empty()
-            # フォームバージョンは固定（インクリメントしないことで選択を維持）
             v = st.session_state.form_version
             c1, c2 = st.columns(2)
             with c1:
@@ -233,8 +242,7 @@ def main():
                     }])
                     others = db[~((db['real_name'] == current_emp_id) & (db['date'] == str(target_date)))]
                     conn.update(worksheet="Records", data=pd.concat([others, new_row]).reset_index(drop=True))
-                    st.balloons(); time.sleep(2); 
-                    # ★ここで v += 1 を行わないことで、チェック状態を維持
+                    st.balloons(); time.sleep(2)
                     st.cache_data.clear(); st.rerun()
         record_ui()
 
@@ -259,7 +267,8 @@ def main():
                 
                 mini = master_data[['emp_id_norm', 'nickname']].drop_duplicates()
                 summary = summary.merge(mini, left_on='real_name_norm', right_on='emp_id_norm', how='left')
-                summary['ニックネーム'] = summary['nickname'].apply(lambda x: x if pd.notna(x) and str(x).lower() not in ["nan", "none", ""] else "－")
+                summary['ニックネーム'] = summary['nickname'].apply(clean_nick)
+                summary['ニックネーム'] = summary['ニックネーム'].apply(lambda x: x if pd.notna(x) and str(x).lower() not in ["nan", "none", "", "null"] else "－")
                 
                 summary = summary.sort_values(['入力率', '平均ポイント'], ascending=[False, False])
                 summary["順位"] = range(1, len(summary) + 1)

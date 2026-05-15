@@ -201,7 +201,13 @@ def main():
 
         st.write(f"### {current_nickname}さんの入力率は {input_rate} ％、平均ポイントは {avg_points:.1f} ptです")
         
-        target_date = st.date_input("対象日（7日前まで遡れます）", value=today_date, min_value=today_date-timedelta(days=7), max_value=today_date)
+        # ★「対象日」の選択可能範囲をカレンダー側で制限（今日が6/1前か後かでエラーを自動回避）
+        if today_date < APP_START_DATE:
+            target_date = st.date_input("対象日（イベント開始前です）", value=APP_START_DATE, min_value=APP_START_DATE)
+        else:
+            back_7_days = today_date - timedelta(days=7)
+            min_date = max(APP_START_DATE, back_7_days)  # 6/1より前には絶対に遡れない設定
+            target_date = st.date_input("対象日（7日前まで遡れます）", value=today_date, min_value=min_date, max_value=today_date)
 
         @st.fragment
         def record_ui():
@@ -229,7 +235,6 @@ def main():
             st.metric("本日のポイント", f"{n_inv - n_debt:+d}")
             
             if st.button("登録する", type="primary", use_container_width=True):
-                # ★集計開始日(6/1)より前の日付に対する登録制限の追加
                 if target_date < APP_START_DATE:
                     st.error("イベント開始前のため登録できません")
                 else:

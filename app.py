@@ -11,8 +11,8 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 
 # 合言葉
 SECRET_AUTH_CODE = "feelist2026" 
-# 集計開始日
-APP_START_DATE = date(2026, 5, 1)
+# ★集計開始日を2026年6月1日に設定
+APP_START_DATE = date(2026, 6, 1)
 # JST（日本標準時）の設定
 JST = timezone(timedelta(hours=9))
 
@@ -62,7 +62,7 @@ def normalize_id(x):
     except: return s.zfill(4)
 
 def clean_nick(x):
-    """ ニックネーム用の「.0」除去関数（文字列はそのまま残す） """
+    """ ニックネーム用の「.0」除去関数 """
     s = str(x).strip()
     if s.endswith('.0'): s = s[:-2]
     return s
@@ -77,7 +77,6 @@ def load_data_cached(sheet_name):
             df["emp_id_norm"] = df["emp_id"].apply(normalize_id)
         if "real_name" in df.columns:
             df["real_name_norm"] = df["real_name"].apply(normalize_id)
-        # 読み込みキャッシュ時に、あらかじめニックネームの .0 を消しておく
         if "nickname" in df.columns:
             df["nickname"] = df["nickname"].apply(clean_nick)
         return df
@@ -172,8 +171,6 @@ def main():
     master_data = load_data_cached("UserMaster")
     user_info = master_data[master_data['emp_id_norm'] == current_emp_id].iloc[0]
     nickname_raw = user_info.get('nickname', current_emp_id)
-    
-    # 表示名決定時にも「.0」を徹底的に排除する
     current_nickname = clean_nick(nickname_raw) if pd.notna(nickname_raw) and str(nickname_raw).lower() not in ["nan", "none", ""] else clean_nick(current_emp_id)
     
     all_recs = load_data_cached("Records")
@@ -230,20 +227,25 @@ def main():
                 with sc2: st.markdown(f'<div class="status-card"><div class="status-label" style="color:#cc3333;">借金型</div><div class="star-display" style="color:#ff4b4b;">{debt_s}</div><div class="status-count">{debt_txt}</div></div>', unsafe_allow_html=True)
             
             st.metric("本日のポイント", f"{n_inv - n_debt:+d}")
+            
             if st.button("登録する", type="primary", use_container_width=True):
-                with st.spinner("保存中..."):
-                    db = conn.read(worksheet="Records", ttl="0s").astype(str)
-                    db['real_name'] = db['real_name'].apply(normalize_id)
-                    now_jst = datetime.now(JST).strftime('%Y-%m-%d %H:%M:%S')
-                    new_row = pd.DataFrame([{
-                        "real_name": current_emp_id, "date": str(target_date), 
-                        "points": str(n_inv - n_debt), "entry_date": now_jst, 
-                        "investment_items": ", ".join(sel_inv), "debt_items": ", ".join(sel_debt)
-                    }])
-                    others = db[~((db['real_name'] == current_emp_id) & (db['date'] == str(target_date)))]
-                    conn.update(worksheet="Records", data=pd.concat([others, new_row]).reset_index(drop=True))
-                    st.balloons(); time.sleep(2)
-                    st.cache_data.clear(); st.rerun()
+                # ★集計開始日(6/1)より前の日付に対する登録制限の追加
+                if target_date < APP_START_DATE:
+                    st.error("イベント開始前のため登録できません")
+                else:
+                    with st.spinner("保存中..."):
+                        db = conn.read(worksheet="Records", ttl="0s").astype(str)
+                        db['real_name'] = db['real_name'].apply(normalize_id)
+                        now_jst = datetime.now(JST).strftime('%Y-%m-%d %H:%M:%S')
+                        new_row = pd.DataFrame([{
+                            "real_name": current_emp_id, "date": str(target_date), 
+                            "points": str(n_inv - n_debt), "entry_date": now_jst, 
+                            "investment_items": ", ".join(sel_inv), "debt_items": ", ".join(sel_debt)
+                        }])
+                        others = db[~((db['real_name'] == current_emp_id) & (db['date'] == str(target_date)))]
+                        conn.update(worksheet="Records", data=pd.concat([others, new_row]).reset_index(drop=True))
+                        st.balloons(); time.sleep(2)
+                        st.cache_data.clear(); st.rerun()
         record_ui()
 
     # --- タブ2: ランキング ---
@@ -282,7 +284,7 @@ def main():
                         "平均ポイント": st.column_config.NumberColumn(format="%.1f pt", alignment="left")
                     }
                 )
-            else: st.info("集計対象期間(5/1〜)のデータがまだありません。")
+            else: st.info("集計対象期間(6/1〜)のデータがまだありません。")
 
     # --- タブ3: マイデータ ---
     with tab3:

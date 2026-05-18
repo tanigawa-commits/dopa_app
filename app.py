@@ -11,8 +11,8 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 
 # 合言葉
 SECRET_AUTH_CODE = "feelist2026" 
-# ★集計開始日を2026年6月1日に設定
-APP_START_DATE = date(2026, 5, 11)
+# 集計開始日を2026年6月1日に設定
+APP_START_DATE = date(2026, 5, 1)
 # JST（日本標準時）の設定
 JST = timezone(timedelta(hours=9))
 
@@ -28,15 +28,21 @@ st.markdown("""
     .status-label { font-size: 16px; font-weight: bold; margin-bottom: 5px; }
     .status-count { font-size: 15px; color: #333; font-weight: bold; height: 22px; }
 
-    /* 履歴テーブル（自動折り返し） */
+    /* 【修正】履歴テーブル（自動折り返し ＆ Darkモードに完全追従） */
     .history-table {
-        width: 100%; border-collapse: collapse; font-size: 14px; table-layout: fixed; background-color: white;
+        width: 100%; border-collapse: collapse; font-size: 14px; table-layout: fixed; 
+        background-color: var(--background-color, white);
+        color: var(--text-color, #31333f);
     }
     .history-table th, .history-table td {
-        border: 1px solid #f0f0f0; padding: 10px 8px; text-align: left; vertical-align: top;
+        border: 1px solid var(--border-color, #f0f0f0); padding: 10px 8px; text-align: left; vertical-align: top;
         word-wrap: break-word; white-space: normal; overflow-wrap: break-word;
     }
-    .history-table th { background-color: #f8f9fb; color: #666; font-weight: bold; }
+    .history-table th { 
+        background-color: var(--secondary-background-color, #f8f9fb); 
+        color: var(--text-color, #666); 
+        font-weight: bold; 
+    }
     .col-date { width: 100px; }
     .col-pts { width: 80px; text-align: right !important; }
     </style>
@@ -201,12 +207,12 @@ def main():
 
         st.write(f"### {current_nickname}さんの入力率は {input_rate} ％、平均ポイントは {avg_points:.1f} ptです")
         
-        # ★「対象日」の選択可能範囲をカレンダー側で制限（今日が6/1前か後かでエラーを自動回避）
+        # 対象日の制限
         if today_date < APP_START_DATE:
             target_date = st.date_input("対象日（イベント開始前です）", value=APP_START_DATE, min_value=APP_START_DATE)
         else:
             back_7_days = today_date - timedelta(days=7)
-            min_date = max(APP_START_DATE, back_7_days)  # 6/1より前には絶対に遡れない設定
+            min_date = max(APP_START_DATE, back_7_days)
             target_date = st.date_input("対象日（7日前まで遡れます）", value=today_date, min_value=min_date, max_value=today_date)
 
         @st.fragment
@@ -214,13 +220,26 @@ def main():
             st.divider()
             top_stars_p = st.empty()
             v = st.session_state.form_version
+            
+            # ★【新機能】選択された日付の既存登録データを抽出し、初期値リストを作る
+            day_rec = user_recs[user_recs['date'] == str(target_date)]
+            if not day_rec.empty:
+                raw_inv = day_rec.iloc[0].get('investment_items', '')
+                raw_debt = day_rec.iloc[0].get('debt_items', '')
+                existing_inv = [x.strip() for x in str(raw_inv).split(',')] if pd.notna(raw_inv) and str(raw_inv).strip() != '' else []
+                existing_debt = [x.strip() for x in str(raw_debt).split(',')] if pd.notna(raw_debt) and str(raw_debt).strip() != '' else []
+            else:
+                existing_inv = []
+                existing_debt = []
+
             c1, c2 = st.columns(2)
             with c1:
                 st.markdown("#### 🟢 投資型（自己投資）")
-                sel_inv = [i for i in INVESTMENT_ITEMS if st.checkbox(i, key=f"inv_{i}_{v}")]
+                # keyにtarget_dateを組み込むことで、日付を過去に切り替えた瞬間にその日のデータがチェックボックスに適用されます
+                sel_inv = [i for i in INVESTMENT_ITEMS if st.checkbox(i, value=(i in existing_inv), key=f"inv_{i}_{target_date}_{v}")]
             with c2:
                 st.markdown("#### 🔴 借金型（即時快楽）")
-                sel_debt = [i for i in DEBT_ITEMS if st.checkbox(i, key=f"debt_{i}_{v}")]
+                sel_debt = [i for i in DEBT_ITEMS if st.checkbox(i, value=(i in existing_debt), key=f"debt_{i}_{target_date}_{v}")]
             
             n_inv, n_debt = len(sel_inv), len(sel_debt)
             inv_s, debt_s = "★" * min(n_inv, 10) + "☆" * max(0, 10 - n_inv), "★" * min(n_debt, 10) + "☆" * max(0, 10 - n_debt)

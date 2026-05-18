@@ -12,7 +12,7 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 # 合言葉
 SECRET_AUTH_CODE = "feelist2026" 
 # ★集計開始日を2026年6月1日に設定
-APP_START_DATE = date(2026, 6, 1)
+APP_START_DATE = date(2026, 5, 1)
 # JST（日本標準時）の設定
 JST = timezone(timedelta(hours=9))
 

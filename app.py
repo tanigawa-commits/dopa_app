@@ -12,7 +12,7 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 # 合言葉
 SECRET_AUTH_CODE = "feelist2026" 
 # ★集計開始日を2026年6月1日に設定
-APP_START_DATE = date(2026, 5, 1)
+APP_START_DATE = date(2026, 6, 1)
 # JST（日本標準時）の設定
 JST = timezone(timedelta(hours=9))
 
@@ -28,33 +28,7 @@ st.markdown("""
     .status-label { font-size: 16px; font-weight: bold; margin-bottom: 5px; }
     .status-count { font-size: 15px; color: #333; font-weight: bold; height: 22px; }
 
-    /* 【修正】背景色・文字色はシステムに連動させつつ、罫線は両モードでクッキリ見える中間グレーに固定 */
-    .history-table {
-        width: 100%; 
-        border-collapse: collapse !important; 
-        font-size: 14px; 
-        table-layout: fixed; 
-        background-color: var(--background-color) !important;
-        color: var(--text-color) !important;
-        border: 1px solid #888888 !important; /* どちらのモードでも消えない外枠 */
-    }
-    .history-table th, .history-table td {
-        border: 1px solid #888888 !important; /* 縦線・横線も中間グレーで確実に描画 */
-        padding: 10px 8px; 
-        text-align: left; 
-        vertical-align: top;
-        word-wrap: break-word; 
-        white-space: normal; 
-        overflow-wrap: break-word;
-    }
-    .history-table th { 
-        background-color: var(--secondary-background-color) !important; 
-        color: var(--text-color) !important; 
-        font-weight: bold; 
-    }
-
-    .col-date { width: 100px; }
-    .col-pts { width: 80px; text-align: right !important; }
+    /* 【修正】古いHTMLテーブル用のCSSを削除 */
     </style>
     """, unsafe_allow_html=True)
 
@@ -325,14 +299,36 @@ def main():
         if not user_recs.empty:
             df_view = user_recs[['date', 'points', 'investment_items', 'debt_items']].copy()
             df_view = df_view.sort_values('date', ascending=False)
-            table_html = '<table class="history-table"><tr><th class="col-date">日付</th><th class="col-pts">ポイント</th><th>投資</th><th>借金</th></tr>'
-            for _, row in df_view.iterrows():
-                d = row['date'].replace('-', '/')
-                p = f"{int(float(row['points']))} pt"
-                inv, dbt = clean_val_for_display(row['investment_items']), clean_val_for_display(row['debt_items'])
-                table_html += f'<tr><td>{d}</td><td style="text-align:right;">{p}</td><td>{inv}</td><td>{dbt}</td></tr>'
-            table_html += '</table>'
-            st.markdown(table_html, unsafe_allow_html=True)
+            
+            # 日付のフォーマットを変更 (例: 2026-05-18 -> 2026/05/18)
+            df_view['date'] = df_view['date'].str.replace('-', '/')
+            
+            # ★【修正】HTMLテーブルの生成を削除し、st.dataframeを使用するように変更
+            
+            # 表示用にデータを整形
+            df_view_styled = df_view.copy()
+            # 列名を日本語に変更
+            df_view_styled.columns = ["日付", "ポイント", "投資", "借金"]
+            
+            # 空の値を全角ハイフンにする
+            df_view_styled["投資"] = df_view_styled["投資"].apply(clean_val_for_display)
+            df_view_styled["借金"] = df_view_styled["借金"].apply(clean_val_for_display)
+            
+            # ポイントに単位を追加
+            # st.dataframe内でNumberColumnを使うと pt を追加できます
+            
+            st.dataframe(
+                df_view_styled,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "日付": st.column_config.TextColumn(width="medium"),
+                    "ポイント": st.column_config.NumberColumn(format="%d pt", width="small", alignment="right"),
+                    "投資": st.column_config.Column(width="large"),
+                    "借金": st.column_config.Column(width="large"),
+                }
+            )
+            
             st.caption("※ 項目が多い場合は自動的に折り返されます。")
         else: st.warning("記録がありません。")
 

@@ -28,7 +28,7 @@ st.markdown("""
     .status-label { font-size: 16px; font-weight: bold; margin-bottom: 5px; }
     .status-count { font-size: 15px; color: #333; font-weight: bold; height: 22px; }
 
-    /* 【修正】カラーコードによる固定を完全排除し、文字色・背景色の変数と100%直結 */
+    /* 【修正】背景色・文字色はシステムに連動させつつ、罫線は両モードでクッキリ見える中間グレーに固定 */
     .history-table {
         width: 100%; 
         border-collapse: collapse !important; 
@@ -36,11 +36,10 @@ st.markdown("""
         table-layout: fixed; 
         background-color: var(--background-color) !important;
         color: var(--text-color) !important;
-        border: 1px solid var(--text-color) !important; /* 外枠を文字色と連動させて確実に表示 */
+        border: 1px solid #888888 !important; /* どちらのモードでも消えない外枠 */
     }
     .history-table th, .history-table td {
-        /* 縦線・横線も文字色（Lightなら黒、Darkなら白）と完全連動させて絶対に消さない */
-        border: 1px solid var(--text-color) !important; 
+        border: 1px solid #888888 !important; /* 縦線・横線も中間グレーで確実に描画 */
         padding: 10px 8px; 
         text-align: left; 
         vertical-align: top;

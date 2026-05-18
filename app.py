@@ -12,7 +12,7 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 # 合言葉
 SECRET_AUTH_CODE = "feelist2026" 
 # ★集計開始日を2026年6月1日に設定
-APP_START_DATE = date(2026, 6, 1)
+APP_START_DATE = date(2026, 5, 1)
 # JST（日本標準時）の設定
 JST = timezone(timedelta(hours=9))
 
@@ -28,18 +28,19 @@ st.markdown("""
     .status-label { font-size: 16px; font-weight: bold; margin-bottom: 5px; }
     .status-count { font-size: 15px; color: #333; font-weight: bold; height: 22px; }
 
-    /* 【修正】通常時（Lightモード）の履歴テーブル設定：罫線をパキッとくっきり表示 */
+    /* 【修正】カラーコードによる固定を完全排除し、文字色・背景色の変数と100%直結 */
     .history-table {
         width: 100%; 
         border-collapse: collapse !important; 
         font-size: 14px; 
         table-layout: fixed; 
-        background-color: #ffffff;
-        color: #31333f;
-        border: 1px solid #cccccc !important; /* 外枠を確実に固定 */
+        background-color: var(--background-color) !important;
+        color: var(--text-color) !important;
+        border: 1px solid var(--text-color) !important; /* 外枠を文字色と連動させて確実に表示 */
     }
     .history-table th, .history-table td {
-        border: 1px solid #cccccc !important; /* 縦線・横線をくっきり表示 */
+        /* 縦線・横線も文字色（Lightなら黒、Darkなら白）と完全連動させて絶対に消さない */
+        border: 1px solid var(--text-color) !important; 
         padding: 10px 8px; 
         text-align: left; 
         vertical-align: top;
@@ -48,25 +49,9 @@ st.markdown("""
         overflow-wrap: break-word;
     }
     .history-table th { 
-        background-color: #f8f9fb; 
-        color: #666666; 
+        background-color: var(--secondary-background-color) !important; 
+        color: var(--text-color) !important; 
         font-weight: bold; 
-    }
-
-    /* 【修正】Darkモード検知時：背景を黒に、罫線も視認性の高いダークグレーに同期 */
-    @media (prefers-color-scheme: dark) {
-        .history-table {
-            background-color: #0e1117 !important; 
-            color: #ffffff !important;             
-            border: 1px solid #464855 !important;
-        }
-        .history-table th {
-            background-color: #1a1c23 !important; 
-            color: #ffffff !important;
-        }
-        .history-table td, .history-table th {
-            border: 1px solid #464855 !important; /* ダークモードでも潰れない区切り線 */
-        }
     }
 
     .col-date { width: 100px; }

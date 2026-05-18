@@ -28,21 +28,37 @@ st.markdown("""
     .status-label { font-size: 16px; font-weight: bold; margin-bottom: 5px; }
     .status-count { font-size: 15px; color: #333; font-weight: bold; height: 22px; }
 
-    /* 【修正】履歴テーブル（自動折り返し ＆ Darkモードに完全追従） */
+    /* 【通常（Lightモード）時の履歴テーブル設定】 */
     .history-table {
         width: 100%; border-collapse: collapse; font-size: 14px; table-layout: fixed; 
-        background-color: var(--background-color, white);
-        color: var(--text-color, #31333f);
+        background-color: #ffffff;
+        color: #31333f;
     }
     .history-table th, .history-table td {
-        border: 1px solid var(--border-color, #f0f0f0); padding: 10px 8px; text-align: left; vertical-align: top;
+        border: 1px solid #f0f0f0; padding: 10px 8px; text-align: left; vertical-align: top;
         word-wrap: break-word; white-space: normal; overflow-wrap: break-word;
     }
     .history-table th { 
-        background-color: var(--secondary-background-color, #f8f9fb); 
-        color: var(--text-color, #666); 
+        background-color: #f8f9fb; 
+        color: #666666; 
         font-weight: bold; 
     }
+
+    /* 【新機能】Darkモード検知時の上書き設定（ランキングの表と完全に同色化） */
+    @media (prefers-color-scheme: dark) {
+        .history-table {
+            background-color: #0e1117 !important; /* Streamlit標準のダーク背景色 */
+            color: #ffffff !important;             /* 文字を完全な白に */
+        }
+        .history-table th {
+            background-color: #1a1c23 !important; /* ヘッダーをやや明るい黒に */
+            color: #ffffff !important;
+        }
+        .history-table td, .history-table th {
+            border: 1px solid #262730 !important; /* 枠線もダーク用に変更 */
+        }
+    }
+
     .col-date { width: 100px; }
     .col-pts { width: 80px; text-align: right !important; }
     </style>
@@ -221,7 +237,7 @@ def main():
             top_stars_p = st.empty()
             v = st.session_state.form_version
             
-            # ★【新機能】選択された日付の既存登録データを抽出し、初期値リストを作る
+            # 選択された日付の既存データを抽出（過去データ自動反映ロジック）
             day_rec = user_recs[user_recs['date'] == str(target_date)]
             if not day_rec.empty:
                 raw_inv = day_rec.iloc[0].get('investment_items', '')
@@ -235,7 +251,6 @@ def main():
             c1, c2 = st.columns(2)
             with c1:
                 st.markdown("#### 🟢 投資型（自己投資）")
-                # keyにtarget_dateを組み込むことで、日付を過去に切り替えた瞬間にその日のデータがチェックボックスに適用されます
                 sel_inv = [i for i in INVESTMENT_ITEMS if st.checkbox(i, value=(i in existing_inv), key=f"inv_{i}_{target_date}_{v}")]
             with c2:
                 st.markdown("#### 🔴 借金型（即時快楽）")

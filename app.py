@@ -28,35 +28,25 @@ st.markdown("""
     .status-label { font-size: 16px; font-weight: bold; margin-bottom: 5px; }
     .status-count { font-size: 15px; color: #333; font-weight: bold; height: 22px; }
 
-    /* 【通常（Lightモード）時の履歴テーブル設定】 */
+    /* 【修正】固定カラーを一切使わず、Streamlitのシステム変数と100%直結（自動白黒反転） */
     .history-table {
         width: 100%; border-collapse: collapse; font-size: 14px; table-layout: fixed; 
-        background-color: #ffffff;
-        color: #31333f;
+        background-color: var(--background-color) !important;
+        color: var(--text-color) !important;
     }
     .history-table th, .history-table td {
-        border: 1px solid #f0f0f0; padding: 10px 8px; text-align: left; vertical-align: top;
-        word-wrap: break-word; white-space: normal; overflow-wrap: break-word;
+        border: 1px solid var(--border-color) !important; 
+        padding: 10px 8px; 
+        text-align: left; 
+        vertical-align: top;
+        word-wrap: break-word; 
+        white-space: normal; 
+        overflow-wrap: break-word;
     }
     .history-table th { 
-        background-color: #f8f9fb; 
-        color: #666666; 
+        background-color: var(--secondary-background-color) !important; 
+        color: var(--text-color) !important; 
         font-weight: bold; 
-    }
-
-    /* 【新機能】Darkモード検知時の上書き設定（ランキングの表と完全に同色化） */
-    @media (prefers-color-scheme: dark) {
-        .history-table {
-            background-color: #0e1117 !important; /* Streamlit標準のダーク背景色 */
-            color: #ffffff !important;             /* 文字を完全な白に */
-        }
-        .history-table th {
-            background-color: #1a1c23 !important; /* ヘッダーをやや明るい黒に */
-            color: #ffffff !important;
-        }
-        .history-table td, .history-table th {
-            border: 1px solid #262730 !important; /* 枠線もダーク用に変更 */
-        }
     }
 
     .col-date { width: 100px; }

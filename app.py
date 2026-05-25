@@ -27,8 +27,6 @@ st.markdown("""
     .star-display { font-size: 26px; letter-spacing: 2px; margin: 5px 0; font-family: monospace; }
     .status-label { font-size: 16px; font-weight: bold; margin-bottom: 5px; }
     .status-count { font-size: 15px; color: #333; font-weight: bold; height: 22px; }
-
-    /* 【修正】古いHTMLテーブル用のCSSを削除 */
     </style>
     """, unsafe_allow_html=True)
 
@@ -176,7 +174,7 @@ def main():
     # --- タブ1: 今日の記録 ---
     with tab1:
         today_date = date.today()
-        if not user_recs.empty:
+        if not user_recs.empty and 'date' in user_recs.columns:
             user_recs_filtered = user_recs.copy()
             user_recs_filtered['date_dt'] = pd.to_datetime(user_recs_filtered['date']).dt.date
             user_recs_filtered = user_recs_filtered[user_recs_filtered['date_dt'] >= APP_START_DATE]
@@ -205,8 +203,12 @@ def main():
             top_stars_p = st.empty()
             v = st.session_state.form_version
             
-            # 選択された日付の既存データを抽出（過去データ自動反映ロジック）
-            day_rec = user_recs[user_recs['date'] == str(target_date)]
+            # ★【修正】データが1件もない(またはdate列がない)場合にKeyErrorを回避するガード
+            if not user_recs.empty and 'date' in user_recs.columns:
+                day_rec = user_recs[user_recs['date'] == str(target_date)]
+            else:
+                day_rec = pd.DataFrame()
+
             if not day_rec.empty:
                 raw_inv = day_rec.iloc[0].get('investment_items', '')
                 raw_debt = day_rec.iloc[0].get('debt_items', '')
@@ -249,7 +251,11 @@ def main():
                             "points": str(n_inv - n_debt), "entry_date": now_jst, 
                             "investment_items": ", ".join(sel_inv), "debt_items": ", ".join(sel_debt)
                         }])
-                        others = db[~((db['real_name'] == current_emp_id) & (db['date'] == str(target_date)))]
+                        # まだ列がない場合の考慮
+                        if not db.empty and 'real_name' in db.columns and 'date' in db.columns:
+                            others = db[~((db['real_name'] == current_emp_id) & (db['date'] == str(target_date)))]
+                        else:
+                            others = pd.DataFrame()
                         conn.update(worksheet="Records", data=pd.concat([others, new_row]).reset_index(drop=True))
                         st.balloons(); time.sleep(2)
                         st.cache_data.clear(); st.rerun()
@@ -258,7 +264,7 @@ def main():
     # --- タブ2: ランキング ---
     with tab2:
         st.subheader("🏆 ランキング")
-        if not all_recs.empty:
+        if not all_recs.empty and 'date' in all_recs.columns:
             rdf = all_recs.copy()
             rdf['date_dt'] = pd.to_datetime(rdf['date']).dt.date
             rdf = rdf[rdf['date_dt'] >= APP_START_DATE]
@@ -291,31 +297,23 @@ def main():
                         "平均ポイント": st.column_config.NumberColumn(format="%.1f pt", alignment="left")
                     }
                 )
-            else: st.info("集計対象期間(6/1〜)のデータがまだありません。")
+            else: st.info("集集対象期間(6/1〜)のデータがまだありません。")
+        else: st.info("データがまだ登録されていません。")
 
     # --- タブ3: マイデータ ---
     with tab3:
         st.subheader("📋 全履歴の一覧")
-        if not user_recs.empty:
+        if not user_recs.empty and 'date' in user_recs.columns:
             df_view = user_recs[['date', 'points', 'investment_items', 'debt_items']].copy()
             df_view = df_view.sort_values('date', ascending=False)
             
-            # 日付のフォーマットを変更 (例: 2026-05-18 -> 2026/05/18)
             df_view['date'] = df_view['date'].str.replace('-', '/')
             
-            # ★【修正】HTMLテーブルの生成を削除し、st.dataframeを使用するように変更
-            
-            # 表示用にデータを整形
             df_view_styled = df_view.copy()
-            # 列名を日本語に変更
             df_view_styled.columns = ["日付", "ポイント", "投資", "借金"]
             
-            # 空の値を全角ハイフンにする
             df_view_styled["投資"] = df_view_styled["投資"].apply(clean_val_for_display)
             df_view_styled["借金"] = df_view_styled["借金"].apply(clean_val_for_display)
-            
-            # ポイントに単位を追加
-            # st.dataframe内でNumberColumnを使うと pt を追加できます
             
             st.dataframe(
                 df_view_styled,
@@ -328,7 +326,6 @@ def main():
                     "借金": st.column_config.Column(width="large"),
                 }
             )
-            
             st.caption("※ 項目が多い場合は自動的に折り返されます。")
         else: st.warning("記録がありません。")
 

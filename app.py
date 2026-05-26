@@ -11,7 +11,7 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 
 # 合言葉
 SECRET_AUTH_CODE = "feelist2026" 
-# ★集計開始日を2026年6月1日に設定
+# 集計開始日を2026年6月1日に設定
 APP_START_DATE = date(2026, 6, 1)
 # JST（日本標準時）の設定
 JST = timezone(timedelta(hours=9))
@@ -145,10 +145,20 @@ def main():
             if len(target_id) != 4: id_msg.error("社員番号は4桁で入力してください")
             else:
                 with st.spinner("認証中..."):
-                    master = load_data_cached("UserMaster")
+                    # ★【修正】社員番号入力時は一時保存(キャッシュ)を使わず、都度リアルタイムでDBを直接読み込む(ttl="0s")
+                    try:
+                        master_raw = conn.read(worksheet="UserMaster", ttl="0s")
+                        if master_raw is not None and not master_raw.empty:
+                            master = master_raw.astype(str)
+                            master["emp_id_norm"] = master["emp_id"].apply(normalize_id)
+                        else:
+                            master = pd.DataFrame()
+                    except Exception:
+                        master = pd.DataFrame()
+
                     tid_norm = normalize_id(target_id)
                     user_row = master[master['emp_id_norm'] == tid_norm] if not master.empty else pd.DataFrame()
-                    # ★【修正】エラーメッセージの文言をご指定の内容に変更
+                    
                     if user_row.empty: id_msg.error("この社員番号はエントリーされていません")
                     else:
                         id_msg.empty()

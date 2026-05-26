@@ -11,7 +11,7 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 
 # 合言葉
 SECRET_AUTH_CODE = "feelist2026" 
-# ★集計開始日を2026年6月1日に設定
+# 集計開始日を2026年6月1日に設定
 APP_START_DATE = date(2026, 6, 1)
 # JST（日本標準時）の設定
 JST = timezone(timedelta(hours=9))
@@ -19,7 +19,7 @@ JST = timezone(timedelta(hours=9))
 # デザインCSS
 st.markdown("""
     <style>
-    /* 【新機能】3点ドットメニュー以外のツールバーアイコン（ShareやEditなど）を強制非表示 */
+    /* 3点ドットメニュー以外のツールバーアイコン（ShareやEditなど）を強制非表示 */
     header[data-testid="stHeader"] div[data-testid="stToolbarActions"] {
         display: none !important;
     }
@@ -149,50 +149,58 @@ def main():
         if target_id:
             if len(target_id) != 4: id_msg.error("社員番号は4桁で入力してください")
             else:
-                with st.spinner("認証中..."):
-                    # 社員番号入力時は一時保存(キャッシュ)を使わず、都度リアルタイムでDBを直接読み込む(ttl="0s")
-                    try:
-                        master_raw = conn.read(worksheet="UserMaster", ttl="0s")
-                        if master_raw is not None and not master_raw.empty:
-                            master = master_raw.astype(str)
-                            master["emp_id_norm"] = master["emp_id"].apply(normalize_id)
-                        else:
-                            master = pd.DataFrame()
-                    except Exception:
-                        master = pd.DataFrame()
+                # ★【修正】パスワード入力中のAPI連打によるフリーズを防ぐスマートキャッシュ機構
+                if 'last_checked_id' not in st.session_state: st.session_state.last_checked_id = ""
+                if 'auth_master_data' not in st.session_state: st.session_state.auth_master_data = pd.DataFrame()
 
-                    tid_norm = normalize_id(target_id)
-                    user_row = master[master['emp_id_norm'] == tid_norm] if not master.empty else pd.DataFrame()
-                    
-                    if user_row.empty: id_msg.error("この社員番号はエントリーされていません")
+                # 社員番号が新しく入力・変更された場合のみ、リアルタイムでDBを1回だけ直接読み込む
+                if target_id != st.session_state.last_checked_id or st.session_state.auth_master_data.empty:
+                    with st.spinner("認証中..."):
+                        try:
+                            master_raw = conn.read(worksheet="UserMaster", ttl="0s")
+                            if master_raw is not None and not master_raw.empty:
+                                master = master_raw.astype(str)
+                                master["emp_id_norm"] = master["emp_id"].apply(normalize_id)
+                                st.session_state.auth_master_data = master
+                                st.session_state.last_checked_id = target_id
+                            else:
+                                st.session_state.auth_master_data = pd.DataFrame()
+                        except Exception:
+                            st.session_state.auth_master_data = pd.DataFrame()
+
+                master = st.session_state.auth_master_data
+                tid_norm = normalize_id(target_id)
+                user_row = master[master['emp_id_norm'] == tid_norm] if not master.empty else pd.DataFrame()
+                
+                if user_row.empty: id_msg.error("この社員番号はエントリーされていません")
+                else:
+                    id_msg.empty()
+                    raw_hash = user_row.iloc[0].get('password_hash', "")
+                    stored_hash = str(raw_hash).strip() if pd.notna(raw_hash) and str(raw_hash).lower() not in ["nan", "none", ""] else None
+                    if not stored_hash:
+                        with st.form("init_reg"):
+                            st.info("初回登録：パスワードを設定（4文字以上）")
+                            ac, np, npc = st.text_input("秘密の合言葉", type="password"), st.text_input("新PW", type="password"), st.text_input("確認用", type="password")
+                            if st.form_submit_button("登録してログイン"):
+                                if ac != SECRET_AUTH_CODE: st.error("合言葉が違います")
+                                elif len(np) < 4: st.error("4文字以上必要です")
+                                elif np != npc: st.error("不一致です")
+                                else:
+                                    cm = conn.read(worksheet="UserMaster", ttl="0s").astype(str)
+                                    cm['emp_id'] = cm['emp_id'].apply(normalize_id)
+                                    idx = cm[cm['emp_id'] == tid_norm].index[0]
+                                    cm.at[idx, 'password_hash'], cm.at[idx, 'nickname'] = str(make_hash(np)), tid_norm
+                                    conn.update(worksheet="UserMaster", data=cm)
+                                    st.session_state.update({"authenticated":True, "current_user":tid_norm})
+                                    st.cache_data.clear(); st.rerun()
                     else:
-                        id_msg.empty()
-                        raw_hash = user_row.iloc[0].get('password_hash', "")
-                        stored_hash = str(raw_hash).strip() if pd.notna(raw_hash) and str(raw_hash).lower() not in ["nan", "none", ""] else None
-                        if not stored_hash:
-                            with st.form("init_reg"):
-                                st.info("初回登録：パスワードを設定（4文字以上）")
-                                ac, np, npc = st.text_input("秘密の合言葉", type="password"), st.text_input("新PW", type="password"), st.text_input("確認用", type="password")
-                                if st.form_submit_button("登録してログイン"):
-                                    if ac != SECRET_AUTH_CODE: st.error("合言葉が違います")
-                                    elif len(np) < 4: st.error("4文字以上必要です")
-                                    elif np != npc: st.error("不一致です")
-                                    else:
-                                        cm = conn.read(worksheet="UserMaster", ttl="0s").astype(str)
-                                        cm['emp_id'] = cm['emp_id'].apply(normalize_id)
-                                        idx = cm[cm['emp_id'] == tid_norm].index[0]
-                                        cm.at[idx, 'password_hash'], cm.at[idx, 'nickname'] = str(make_hash(np)), tid_norm
-                                        conn.update(worksheet="UserMaster", data=cm)
-                                        st.session_state.update({"authenticated":True, "current_user":tid_norm})
-                                        st.cache_data.clear(); st.rerun()
-                        else:
-                            with st.form("login_f"):
-                                ip = st.text_input("パスワード", type="password")
-                                if st.form_submit_button("ログイン"):
-                                    if make_hash(ip) == stored_hash:
-                                        st.session_state.update({"authenticated":True, "current_user":tid_norm})
-                                        st.cache_data.clear(); st.rerun()
-                                    else: st.error("パスワードが違います")
+                        with st.form("login_f"):
+                            ip = st.text_input("パスワード", type="password")
+                            if st.form_submit_button("ログイン"):
+                                if make_hash(ip) == stored_hash:
+                                    st.session_state.update({"authenticated":True, "current_user":tid_norm})
+                                    st.cache_data.clear(); st.rerun()
+                                else: st.error("パスワードが違います")
         st.stop()
 
     # データ同期
@@ -212,7 +220,7 @@ def main():
 
     tab1, tab2, tab3, tab4 = st.tabs(["今日の記録", "ランキング", "マイデータ", "設定"])
 
-    # --- タブ1: 今今日の記録 ---
+    # --- タブ1: 今日の記録 ---
     with tab1:
         today_date = date.today()
         if not user_recs.empty and 'date' in user_recs.columns:

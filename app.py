@@ -11,7 +11,7 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 
 # 合言葉
 SECRET_AUTH_CODE = "feelist2026" 
-# 集計開始日を2026年6月1日に設定
+# ★集計開始日を2026年6月1日に設定
 APP_START_DATE = date(2026, 6, 1)
 # JST（日本標準時）の設定
 JST = timezone(timedelta(hours=9))
@@ -19,6 +19,11 @@ JST = timezone(timedelta(hours=9))
 # デザインCSS
 st.markdown("""
     <style>
+    /* 【新機能】3点ドットメニュー以外のツールバーアイコン（ShareやEditなど）を強制非表示 */
+    header[data-testid="stHeader"] div[data-testid="stToolbarActions"] {
+        display: none !important;
+    }
+
     /* 記録カード */
     .status-card {
         border: 1px solid #e6e9ef; border-radius: 15px; padding: 15px; text-align: center;
@@ -145,7 +150,7 @@ def main():
             if len(target_id) != 4: id_msg.error("社員番号は4桁で入力してください")
             else:
                 with st.spinner("認証中..."):
-                    # ★【修正】社員番号入力時は一時保存(キャッシュ)を使わず、都度リアルタイムでDBを直接読み込む(ttl="0s")
+                    # 社員番号入力時は一時保存(キャッシュ)を使わず、都度リアルタイムでDBを直接読み込む(ttl="0s")
                     try:
                         master_raw = conn.read(worksheet="UserMaster", ttl="0s")
                         if master_raw is not None and not master_raw.empty:
@@ -207,7 +212,7 @@ def main():
 
     tab1, tab2, tab3, tab4 = st.tabs(["今日の記録", "ランキング", "マイデータ", "設定"])
 
-    # --- タブ1: 今日の記録 ---
+    # --- タブ1: 今今日の記録 ---
     with tab1:
         today_date = date.today()
         if not user_recs.empty and 'date' in user_recs.columns:

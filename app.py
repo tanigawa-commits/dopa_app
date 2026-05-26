@@ -27,6 +27,31 @@ st.markdown("""
     .star-display { font-size: 26px; letter-spacing: 2px; margin: 5px 0; font-family: monospace; }
     .status-label { font-size: 16px; font-weight: bold; margin-bottom: 5px; }
     .status-count { font-size: 15px; color: #333; font-weight: bold; height: 22px; }
+
+    /* 背景色・文字色はシステムに連動させつつ、罫線は両モードでクッキリ見える中間グレーに固定 */
+    .history-table {
+        width: 100%; 
+        border-collapse: collapse !important; 
+        font-size: 14px; 
+        table-layout: fixed; 
+        background-color: var(--background-color) !important;
+        color: var(--text-color) !important;
+        border: 1px solid #888888 !important; 
+    }
+    .history-table th, .history-table td {
+        border: 1px solid #888888 !important; 
+        padding: 10px 8px; 
+        text-align: left; 
+        vertical-align: top;
+        word-wrap: break-word; 
+        white-space: normal; 
+        overflow-wrap: break-word;
+    }
+    .history-table th { 
+        background-color: var(--secondary-background-color) !important; 
+        color: var(--text-color) !important; 
+        font-weight: bold; 
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -189,9 +214,9 @@ def main():
 
         st.write(f"### {current_nickname}さんの入力率は {input_rate} ％、平均ポイントは {avg_points:.1f} ptです")
         
-        # 対象日の制限
+        # ★【修正】今日が6/1前なら今日の日付を表示。6/1以降は6/1より前へ遡れないように制御
         if today_date < APP_START_DATE:
-            target_date = st.date_input("対象日（イベント開始前です）", value=APP_START_DATE, min_value=APP_START_DATE)
+            target_date = st.date_input("対象日（イベント開始前です）", value=today_date)
         else:
             back_7_days = today_date - timedelta(days=7)
             min_date = max(APP_START_DATE, back_7_days)
@@ -239,8 +264,8 @@ def main():
             st.metric("本日のポイント", f"{n_inv - n_debt:+d}")
             
             if st.button("登録する", type="primary", use_container_width=True):
-                # ★エラー文言をご指定の「イベント開始前です」に修正
-                if target_date < APP_START_DATE:
+                # ★【修正】今日、または対象日のどちらかが6/1前なら100%確実に弾く二重ガードに変更
+                if today_date < APP_START_DATE or target_date < APP_START_DATE:
                     st.error("イベント開始前です")
                 else:
                     with st.spinner("保存中..."):

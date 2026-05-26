@@ -296,4 +296,83 @@ def main():
             rdf = rdf[rdf['date_dt'] >= APP_START_DATE]
             
             if not rdf.empty:
-                summary = rdf.groupby
+                summary = rdf.groupby("real_name_norm").agg({
+                    'date': 'nunique',
+                    'points': lambda x: pd.to_numeric(x, errors='coerce').fillna(0).sum()
+                }).reset_index()
+                summary.columns = ['real_name_norm', 'recorded_days', 'total_points']
+                elapsed = max((date.today() - APP_START_DATE).days + 1, 1)
+                
+                summary['入力率'] = (summary['recorded_days'] / elapsed * 100).round().astype(int)
+                summary['平均ポイント'] = (summary['total_points'] / summary['recorded_days']).round(1)
+                
+                mini = master_data[['emp_id_norm', 'nickname']].drop_duplicates()
+                summary = summary.merge(mini, left_on='real_name_norm', right_on='emp_id_norm', how='left')
+                summary['ニックネーム'] = summary['nickname'].apply(clean_nick)
+                summary['ニックネーム'] = summary['ニックネーム'].apply(lambda x: x if pd.notna(x) and str(x).lower() not in ["nan", "none", "", "null"] else "－")
+                
+                summary = summary.sort_values(['入力率', '平均ポイント'], ascending=[False, False])
+                summary["順位"] = range(1, len(summary) + 1)
+                
+                st.dataframe(
+                    summary[["順位", "ニックネーム", "入力率", "平均ポイント"]],
+                    use_container_width=True, hide_index=True,
+                    column_config={
+                        "順位": st.column_config.NumberColumn(alignment="left"),
+                        "入力率": st.column_config.NumberColumn(format="%d ％", alignment="left"),
+                        "平均ポイント": st.column_config.NumberColumn(format="%.1f pt", alignment="left")
+                    }
+                )
+            else: st.info("集計対象期間(6/1〜)のデータがまだありません。")
+        else: st.info("データがまだ登録されていません。")
+
+    # --- タブ3: マイデータ ---
+    with tab3:
+        st.subheader("📋 全履歴の一覧")
+        if not user_recs.empty and 'date' in user_recs.columns:
+            df_view = user_recs[['date', 'points', 'investment_items', 'debt_items']].copy()
+            df_view = df_view.sort_values('date', ascending=False)
+            
+            df_view['date'] = df_view['date'].str.replace('-', '/')
+            
+            df_view_styled = df_view.copy()
+            df_view_styled.columns = ["日付", "ポイント", "投資", "借金"]
+            
+            df_view_styled["投資"] = df_view_styled["投資"].apply(clean_val_for_display)
+            df_view_styled["借金"] = df_view_styled["借金"].apply(clean_val_for_display)
+            
+            st.dataframe(
+                df_view_styled,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "日付": st.column_config.TextColumn(width="medium"),
+                    "ポイント": st.column_config.NumberColumn(format="%d pt", width="small", alignment="right"),
+                    "投資": st.column_config.Column(width="large"),
+                    "借金": st.column_config.Column(width="large"),
+                }
+            )
+            st.caption("※ 項目が多い場合は自動的に折り返されます。")
+        else: st.warning("記録がありません。")
+
+    # --- タブ4: 設定 ---
+    with tab4:
+        st.subheader("⚙️ 設定")
+        new_nick = st.text_input("ニックネーム変更", value=current_nickname)
+        st.markdown("---")
+        st.write("🔒 パスワードの変更")
+        new_pw, new_pw_c = st.text_input("新PW", type="password"), st.text_input("確認用", type="password")
+        if st.button("設定を更新する"):
+            m_db = conn.read(worksheet="UserMaster", ttl="0s").astype(str)
+            m_db['emp_id'] = m_db['emp_id'].apply(normalize_id)
+            idx = m_db[m_db['emp_id'] == current_emp_id].index[0]
+            m_db.at[idx, 'nickname'] = new_nick
+            if new_pw:
+                if len(new_pw) < 4: st.error("4文字以上必要です"); st.stop()
+                if new_pw == new_pw_c: m_db.at[idx, 'password_hash'] = str(make_hash(new_pw))
+                else: st.error("不一致です"); st.stop()
+            conn.update(worksheet="UserMaster", data=m_db)
+            st.cache_data.clear(); st.success("保存しました"); time.sleep(1); st.rerun()
+
+if __name__ == "__main__":
+    main()

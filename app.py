@@ -203,7 +203,7 @@ def main():
             top_stars_p = st.empty()
             v = st.session_state.form_version
             
-            # ★【修正】データが1件もない(またはdate列がない)場合にKeyErrorを回避するガード
+            # データが1件もない(またはdate列がない)場合にKeyErrorを回避するガード
             if not user_recs.empty and 'date' in user_recs.columns:
                 day_rec = user_recs[user_recs['date'] == str(target_date)]
             else:
@@ -239,8 +239,9 @@ def main():
             st.metric("本日のポイント", f"{n_inv - n_debt:+d}")
             
             if st.button("登録する", type="primary", use_container_width=True):
+                # ★エラー文言をご指定の「イベント開始前です」に修正
                 if target_date < APP_START_DATE:
-                    st.error("イベント開始前のため登録できません")
+                    st.error("イベント開始前です")
                 else:
                     with st.spinner("保存中..."):
                         db = conn.read(worksheet="Records", ttl="0s").astype(str)
@@ -251,7 +252,6 @@ def main():
                             "points": str(n_inv - n_debt), "entry_date": now_jst, 
                             "investment_items": ", ".join(sel_inv), "debt_items": ", ".join(sel_debt)
                         }])
-                        # まだ列がない場合の考慮
                         if not db.empty and 'real_name' in db.columns and 'date' in db.columns:
                             others = db[~((db['real_name'] == current_emp_id) & (db['date'] == str(target_date)))]
                         else:
@@ -297,7 +297,7 @@ def main():
                         "平均ポイント": st.column_config.NumberColumn(format="%.1f pt", alignment="left")
                     }
                 )
-            else: st.info("集集対象期間(6/1〜)のデータがまだありません。")
+            else: st.info("集計対象期間(6/1〜)のデータがまだありません。")
         else: st.info("データがまだ登録されていません。")
 
     # --- タブ3: マイデータ ---
